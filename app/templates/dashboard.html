@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Dashboard</h2>
+    <span class="text-muted">Model Tiering Overview</span>
+</div>
+
+<div class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-icon">&#9707;</div>
+        <div class="kpi-value">{{ models | length }}</div>
+        <div class="kpi-label">Total Models</div>
+    </div>
+    {% for tier_name, count in tier_counts.items() %}
+    <div class="kpi-card">
+        <div class="kpi-icon">&#9650;</div>
+        <div class="kpi-value">{{ count }}</div>
+        <div class="kpi-label">{{ tier_name }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="chart-grid">
+    <div class="card chart-card">
+        <div class="card-header">Models by Tier</div>
+        <div class="card-body">
+            <canvas id="tierChart" height="220"></canvas>
+        </div>
+    </div>
+    <div class="card chart-card">
+        <div class="card-header">Models by Risk Type</div>
+        <div class="card-body">
+            <canvas id="riskChart" height="220"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <span>Recent Models</span>
+        <a href="{{ url_for('main.models_list') }}" class="btn btn-sm btn-outline">View All</a>
+    </div>
+    <div class="card-body p-0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Model Name</th>
+                    <th>Risk Type</th>
+                    <th>Score</th>
+                    <th>Computed Tier</th>
+                    <th>Current Tier</th>
+                    <th>Last Computed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in models[:10] %}
+                <tr>
+                    <td><a href="{{ url_for('main.model_detail', model_id=m['id']) }}">{{ m['name'] }}</a></td>
+                    <td>{{ m['risk_type'] or '-' }}</td>
+                    <td>{{ '%.2f'|format(m['computed_score'] or 0) }}</td>
+                    <td><span class="tier-badge">{{ m['computed_tier'] or '-' }}</span></td>
+                    <td><span class="tier-badge current">{{ m['current_tier'] or '-' }}</span></td>
+                    <td>{{ m['last_computed_at'][:16] if m['last_computed_at'] else '-' if m['last_computed_at'] else '-' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted">No models yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+var CHART_DATA = {{ chart_data_json | safe }};
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='main.js') }}"></script>
+{% endblock %}

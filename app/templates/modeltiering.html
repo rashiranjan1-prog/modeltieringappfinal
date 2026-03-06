@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Model Tiering{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Model Tiering</h2>
+    {% if has_role('Admin', 'Developer') %}
+    <form method="POST" action="{{ url_for('main.run_tiering') }}" style="display:inline;">
+        <button type="submit" class="btn btn-primary">&#9654; Run Tiering for All</button>
+    </form>
+    {% endif %}
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">Tier Definitions</div>
+    <div class="card-body p-0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Tier</th>
+                    <th>Score Range</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tiers %}
+                <tr>
+                    <td><span class="tier-badge">{{ t['name'] }}</span></td>
+                    <td>{{ t['lower_bound'] }} – {{ t['upper_bound'] }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="2" class="text-muted text-center">No tiers configured. <a href="{{ url_for('main.settings') }}">Configure in Settings</a>.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">All Models &amp; Tiers</div>
+    <div class="card-body p-0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Risk Type</th>
+                    <th>Score</th>
+                    <th>Computed Tier</th>
+                    <th>Current Tier</th>
+                    <th>Last Run</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in models %}
+                <tr>
+                    <td><strong>{{ m['name'] }}</strong></td>
+                    <td>{{ m['risk_type'] or '-' }}</td>
+                    <td>{{ '%.2f'|format(m['computed_score'] or 0) }}</td>
+                    <td><span class="tier-badge">{{ m['computed_tier'] or '-' }}</span></td>
+                    <td>
+                        <span class="tier-badge current {% if m['current_tier'] != m['computed_tier'] %}overridden{% endif %}">
+                            {{ m['current_tier'] or '-' }}
+                        </span>
+                    </td>
+                    <td>{{ m['last_computed_at'][:16] if m['last_computed_at'] else '-' if m['last_computed_at'] else '-' }}</td>
+                    <td><a href="{{ url_for('main.model_detail', model_id=m['id']) }}" class="btn btn-sm btn-outline">Details</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted">No models found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

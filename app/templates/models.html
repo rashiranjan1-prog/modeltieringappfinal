@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Models{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Models</h2>
+    {% if current_user.role in ['Admin', 'Developer'] %}
+    <a href="{{ url_for('main.model_new') }}" class="btn btn-primary">+ New Model</a>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Risk Type</th>
+                    <th>Score</th>
+                    <th>Computed Tier</th>
+                    <th>Current Tier</th>
+                    <th>Last Computed</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in models %}
+                <tr>
+                    <td class="text-muted">{{ m['id'] }}</td>
+                    <td><strong>{{ m['name'] }}</strong></td>
+                    <td>{{ m['risk_type'] or '-' }}</td>
+                    <td>{{ '%.2f'|format(m['computed_score'] or 0) }}</td>
+                    <td><span class="tier-badge">{{ m['computed_tier'] or '-' }}</span></td>
+                    <td>
+                        <span class="tier-badge current {% if m['current_tier'] != m['computed_tier'] %}overridden{% endif %}">
+                            {{ m['current_tier'] or '-' }}
+                        </span>
+                        {% if m['current_tier'] and m['computed_tier'] and m['current_tier'] != m['computed_tier'] %}
+                        <span class="badge-override" title="Manually overridden">&#9888;</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ m['last_computed_at'][:10] if m['last_computed_at'] else '-' if m['last_computed_at'] else '-' }}</td>
+                    <td><a href="{{ url_for('main.model_detail', model_id=m['id']) }}" class="btn btn-sm btn-outline">View</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted">No models found. <a href="{{ url_for('main.model_new') }}">Create one</a>.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

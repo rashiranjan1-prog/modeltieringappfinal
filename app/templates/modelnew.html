@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}New Model{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Create New Model</h2>
+    <a href="{{ url_for('main.models_list') }}" class="btn btn-outline">&#8592; Back</a>
+</div>
+
+<div class="card" style="max-width:600px;">
+    <div class="card-header">Model Details</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('main.model_new') }}">
+            <div class="form-group">
+                <label for="name">Model Name <span class="text-danger">*</span></label>
+                <input type="text" id="name" name="name" class="form-control" placeholder="e.g. Credit Risk Model A" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="risk_type">Risk Type</label>
+                <select id="risk_type" name="risk_type" class="form-control">
+                    <option value="">-- Select Risk Type --</option>
+                    <option value="Credit Risk">Credit Risk</option>
+                    <option value="Market Risk">Market Risk</option>
+                    <option value="Operational Risk">Operational Risk</option>
+                    <option value="Liquidity Risk">Liquidity Risk</option>
+                    <option value="Compliance Risk">Compliance Risk</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Create Model</button>
+                <a href="{{ url_for('main.models_list') }}" class="btn btn-outline">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

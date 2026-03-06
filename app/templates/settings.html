@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Settings</h2>
+</div>
+
+<div class="settings-grid">
+
+    <div class="card">
+        <div class="card-header">Group Weights</div>
+        <div class="card-body">
+            <p class="text-muted mb-3">Weights must sum to 1.0</p>
+            <form method="POST" action="{{ url_for('main.settings') }}">
+                <input type="hidden" name="action" value="weights">
+                <div class="form-group">
+                    <label>Materiality Weight</label>
+                    <input type="number" name="materiality_weight" class="form-control" value="{{ mat_w }}" step="0.05" min="0" max="1">
+                </div>
+                <div class="form-group">
+                    <label>Criticality Weight</label>
+                    <input type="number" name="criticality_weight" class="form-control" value="{{ crit_w }}" step="0.05" min="0" max="1">
+                </div>
+                <div class="form-group">
+                    <label>Complexity Weight</label>
+                    <input type="number" name="complexity_weight" class="form-control" value="{{ comp_w }}" step="0.05" min="0" max="1">
+                </div>
+                <button type="submit" class="btn btn-primary">Save Weights</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Tier Ranges</div>
+        <div class="card-body p-0">
+            {% for t in tiers %}
+            <form method="POST" action="{{ url_for('main.settings') }}" class="tier-edit-form">
+                <input type="hidden" name="action" value="tier">
+                <input type="hidden" name="tier_id" value="{{ t['id'] }}">
+                <div class="tier-row">
+                    <input type="text" name="tier_name" value="{{ t['name'] }}" class="form-control" placeholder="Tier name">
+                    <input type="number" name="lower_bound" value="{{ t['lower_bound'] }}" class="form-control" step="0.1" placeholder="Min">
+                    <input type="number" name="upper_bound" value="{{ t['upper_bound'] }}" class="form-control" step="0.1" placeholder="Max">
+                    <button type="submit" class="btn btn-sm btn-outline">Save</button>
+                    <button type="submit" form="del-{{ t['id'] }}" class="btn btn-sm btn-danger">Del</button>
+                </div>
+            </form>
+            <form id="del-{{ t['id'] }}" method="POST" action="{{ url_for('main.settings') }}" style="display:none;">
+                <input type="hidden" name="action" value="delete_tier">
+                <input type="hidden" name="tier_id" value="{{ t['id'] }}">
+            </form>
+            {% endfor %}
+
+            <div class="p-3">
+                <form method="POST" action="{{ url_for('main.settings') }}">
+                    <input type="hidden" name="action" value="add_tier">
+                    <div class="tier-row">
+                        <input type="text" name="tier_name" class="form-control" placeholder="New tier name">
+                        <input type="number" name="lower_bound" class="form-control" step="0.1" placeholder="Min">
+                        <input type="number" name="upper_bound" class="form-control" step="0.1" placeholder="Max">
+                        <button type="submit" class="btn btn-sm btn-primary">Add</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Users</div>
+        <div class="card-body p-0">
+            <table class="table">
+                <thead>
+                    <tr><th>Email</th><th>Role</th><th>Created</th></tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    <tr>
+                        <td>{{ u['email'] }}</td>
+                        <td><span class="user-badge {{ u['role'] | lower }}">{{ u['role'] }}</span></td>
+                        <td>{{ u['created_at'][:10] if u['created_at'] else '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="p-3">
+                <a href="{{ url_for('auth.register') }}" class="btn btn-outline btn-sm">+ Create User</a>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

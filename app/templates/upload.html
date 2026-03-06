@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Upload Excel{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Upload Excel File</h2>
+</div>
+
+<div class="card" style="max-width:600px;">
+    <div class="card-header">Upload .xlsx File</div>
+    <div class="card-body">
+        <p class="text-muted mb-3">Upload an Excel workbook containing sheets: <strong>Models</strong>, <strong>Parameters</strong>, <strong>Tiers</strong>, <strong>Settings</strong>. Tiering will be auto-computed after upload.</p>
+
+        <form method="POST" action="{{ url_for('main.upload') }}" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">Excel File (.xlsx)</label>
+                <input type="file" id="file" name="file" class="form-control" accept=".xlsx" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Upload &amp; Process</button>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4" style="max-width:600px;">
+    <div class="card-header">Expected Sheet Structure</div>
+    <div class="card-body">
+        <div class="upload-schema">
+            <div class="schema-block">
+                <h4>Models sheet</h4>
+                <code>name | risk_type</code>
+            </div>
+            <div class="schema-block">
+                <h4>Parameters sheet</h4>
+                <code>group | sub_parameter | criteria | description | weight</code>
+            </div>
+            <div class="schema-block">
+                <h4>Tiers sheet</h4>
+                <code>name | lower_bound | upper_bound</code>
+            </div>
+            <div class="schema-block">
+                <h4>Settings sheet</h4>
+                <code>key | value</code>
+                <p class="text-muted mt-1">Keys: materiality_weight, criticality_weight, complexity_weight</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

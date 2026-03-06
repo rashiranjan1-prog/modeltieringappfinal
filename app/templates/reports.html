@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Reports</h2>
+    <a href="{{ url_for('main.report_tiering') }}" class="btn btn-primary">+ New Tiering Report</a>
+</div>
+
+<div class="card">
+    <div class="card-header">Saved Reports</div>
+    <div class="card-body p-0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Report Name</th>
+                    <th>Saved By</th>
+                    <th>Created</th>
+                    <th>Filters</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in reports %}
+                {% set filters = r['filters_json'] | from_json if r['filters_json'] else {} %}
+                <tr>
+                    <td><strong>{{ r['name'] }}</strong></td>
+                    <td>{{ r['user_email'] }}</td>
+                    <td>{{ r['created_at'][:16] if r['created_at'] else '-' }}</td>
+                    <td>
+                        {% if filters.get('risk_type') %}Risk: {{ filters.risk_type }}{% endif %}
+                        {% if filters.get('tier') %}Tier: {{ filters.tier }}{% endif %}
+                        {% if not filters.get('risk_type') and not filters.get('tier') %}All models{% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('main.report_tiering', risk_type=filters.get('risk_type',''), tier=filters.get('tier','')) }}" class="btn btn-sm btn-outline">Open</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted">No saved reports. <a href="{{ url_for('main.report_tiering') }}">Create a report</a>.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

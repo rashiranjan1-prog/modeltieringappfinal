@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Tiering Report{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Model Tiering Report</h2>
+    <div class="page-actions">
+        <a href="{{ url_for('main.report_export_csv', risk_type=risk_filter, tier=tier_filter) }}" class="btn btn-outline">&#8595; Export CSV</a>
+        <a href="{{ url_for('main.reports_list') }}" class="btn btn-outline">&#8592; Reports</a>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">Filters</div>
+    <div class="card-body">
+        <form method="GET" action="{{ url_for('main.report_tiering') }}">
+            <div class="filter-row">
+                <div class="form-group">
+                    <label>Risk Type</label>
+                    <select name="risk_type" class="form-control">
+                        <option value="">All Risk Types</option>
+                        {% for rt in risk_types %}
+                        <option value="{{ rt }}" {% if rt == risk_filter %}selected{% endif %}>{{ rt }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Tier</label>
+                    <select name="tier" class="form-control">
+                        <option value="">All Tiers</option>
+                        {% for t in tiers %}
+                        <option value="{{ t['name'] }}" {% if t['name'] == tier_filter %}selected{% endif %}>{{ t['name'] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group form-group-btn">
+                    <button type="submit" class="btn btn-primary">Apply Filters</button>
+                    <a href="{{ url_for('main.report_tiering') }}" class="btn btn-outline">Clear</a>
+                </div>
+            </div>
+        </form>
+
+        {% if has_role('Admin', 'Developer', 'User') %}
+        <form method="POST" action="{{ url_for('main.report_save') }}" class="save-report-form">
+            <input type="hidden" name="risk_type" value="{{ risk_filter }}">
+            <input type="hidden" name="tier" value="{{ tier_filter }}">
+            <div class="form-group" style="display:flex;gap:0.5rem;align-items:center;">
+                <input type="text" name="name" class="form-control" placeholder="Report name..." style="max-width:260px;">
+                <button type="submit" class="btn btn-sm btn-outline">Save Report</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span>Results ({{ models | length }} models)</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Model Name</th>
+                    <th>Risk Type</th>
+                    <th>Computed Score</th>
+                    <th>Computed Tier</th>
+                    <th>Current Tier</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in models %}
+                <tr>
+                    <td><a href="{{ url_for('main.model_detail', model_id=m['id']) }}">{{ m['name'] }}</a></td>
+                    <td>{{ m['risk_type'] or '-' }}</td>
+                    <td>{{ '%.2f'|format(m['computed_score'] or 0) }}</td>
+                    <td><span class="tier-badge">{{ m['computed_tier'] or '-' }}</span></td>
+                    <td><span class="tier-badge current">{{ m['current_tier'] or '-' }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted">No models match filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Parameters{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Parameters</h2>
+    {% if has_role('Admin', 'Developer') %}
+    <a href="{{ url_for('main.parameter_new') }}" class="btn btn-primary">+ New Parameter</a>
+    {% endif %}
+</div>
+
+{% if show_form %}
+<div class="card mb-4" style="max-width:700px;">
+    <div class="card-header">Create Parameter</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('main.parameter_new') }}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Group <span class="text-danger">*</span></label>
+                    <select name="group" class="form-control" required>
+                        <option value="Materiality">Materiality</option>
+                        <option value="Criticality">Criticality</option>
+                        <option value="Complexity">Complexity</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Weight</label>
+                    <input type="number" name="weight" class="form-control" value="1.0" step="0.1" min="0">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Sub-Parameter</label>
+                <input type="text" name="sub_parameter" class="form-control" placeholder="e.g. Revenue Impact">
+            </div>
+            <div class="form-group">
+                <label>Criteria</label>
+                <input type="text" name="criteria" class="form-control" placeholder="e.g. > $10M">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea name="description" class="form-control" rows="3" placeholder="Detailed description..."></textarea>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Create Parameter</button>
+                <a href="{{ url_for('main.parameters_list') }}" class="btn btn-outline">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% for group_name, group_params in groups.items() %}
+<div class="card mb-3">
+    <div class="card-header">{{ group_name }}</div>
+    <div class="card-body p-0">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Sub-Parameter</th>
+                    <th>Criteria</th>
+                    <th>Description</th>
+                    <th>Weight</th>
+                    {% if has_role('Admin') %}<th></th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in group_params %}
+                <tr>
+                    <td>{{ p['sub_parameter'] or '-' }}</td>
+                    <td>{{ p['criteria'] or '-' }}</td>
+                    <td class="text-muted">{{ p['description'] or '-' }}</td>
+                    <td>{{ p['weight'] }}</td>
+                    {% if has_role('Admin') %}
+                    <td>
+                        <form method="POST" action="{{ url_for('main.parameter_delete', param_id=p['id']) }}" onsubmit="return confirm('Delete this parameter?')">
+                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center text-muted">
+        No parameters defined yet.
+        {% if has_role('Admin', 'Developer') %}
+        <a href="{{ url_for('main.parameter_new') }}">Add the first parameter</a>.
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

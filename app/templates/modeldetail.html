@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ model['name'] }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h2>{{ model['name'] }}</h2>
+        <span class="text-muted">{{ model['risk_type'] or 'No risk type' }}</span>
+    </div>
+    <a href="{{ url_for('main.models_list') }}" class="btn btn-outline">&#8592; Back</a>
+</div>
+
+<div class="detail-grid">
+    <div class="detail-main">
+
+        <div class="score-banner">
+            <div class="score-item">
+                <div class="score-val">{{ '%.2f'|format(model['computed_score'] or 0) }}</div>
+                <div class="score-lbl">Computed Score</div>
+            </div>
+            <div class="score-item">
+                <div class="score-val"><span class="tier-badge lg">{{ model['computed_tier'] or 'N/A' }}</span></div>
+                <div class="score-lbl">Computed Tier</div>
+            </div>
+            <div class="score-item">
+                <div class="score-val">
+                    <span class="tier-badge lg current {% if model['current_tier'] != model['computed_tier'] %}overridden{% endif %}">
+                        {{ model['current_tier'] or 'N/A' }}
+                    </span>
+                </div>
+                <div class="score-lbl">Current Tier</div>
+            </div>
+            <div class="score-item">
+                <div class="score-val">{{ model['last_computed_at'][:10] if model['last_computed_at'] else '—' }}</div>
+                <div class="score-lbl">Last Computed</div>
+            </div>
+        </div>
+
+        {% if has_role('Admin', 'Developer') %}
+        <div class="card mt-4">
+            <div class="card-header">Parameter Scores</div>
+            <div class="card-body p-0">
+                <form method="POST" action="{{ url_for('main.model_save_scores', model_id=model['id']) }}">
+                    {% for group_name, group_params in groups.items() %}
+                    <div class="param-group-header">{{ group_name }}</div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Sub-Parameter</th>
+                                <th>Criteria</th>
+                                <th>Weight</th>
+                                <th>Level</th>
+                                <th>Weighted Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for param in group_params %}
+                            {% set score = scores_map.get(param['id']) %}
+                            <tr>
+                                <td>{{ param['sub_parameter'] or '-' }}</td>
+                                <td>{{ param['criteria'] or '-' }}</td>
+                                <td>{{ param['weight'] }}</td>
+                                <td>
+                                    <select name="level_{{ param['id'] }}" class="form-control form-control-sm">
+                                        <option value="1" {% if score and score['level'] == 1 %}selected{% endif %}>Low (1)</option>
+                                        <option value="2" {% if score and score['level'] == 2 %}selected{% endif %}>Medium (2)</option>
+                                        <option value="3" {% if score and score['level'] == 3 %}selected{% endif %}>High (3)</option>
+                                    </select>
+                                </td>
+                                <td>{{ '%.2f'|format(score['weighted_score'] if score else 0) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endfor %}
+                    {% if parameters %}
+                    <div class="p-3">
+                        <button type="submit" class="btn btn-primary">Save &amp; Compute</button>
+                    </div>
+                    {% else %}
+                    <p class="text-muted p-3">No parameters defined yet. <a href="{{ url_for('main.parameters_list') }}">Add parameters</a>.</p>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="detail-side">
+        {% if has_role('Admin', 'Developer') %}
+        <div class="card">
+            <div class="card-header">Override Tier</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('main.model_override', model_id=model['id']) }}">
+                    <div class="form-group">
+                        <label>New Tier</label>
+                        <select name="new_tier" class="form-control">
+                            {% for tier in tiers %}
+                            <option value="{{ tier['name'] }}" {% if tier['name'] == model['current_tier'] %}selected{% endif %}>{{ tier['name'] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Reason <span class="text-danger">*</span></label>
+                        <textarea name="reason" class="form-control" rows="3" placeholder="Explain the override reason..." required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-warning btn-block">Apply Override</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card mt-3">
+            <div class="card-header">Override History</div>
+            <div class="card-body p-0">
+                {% if overrides %}
+                <ul class="override-list">
+                    {% for ov in overrides %}
+                    <li class="override-item">
+                        <div class="override-tiers">
+                            <span class="tier-badge sm">{{ ov['old_tier'] or 'None' }}</span>
+                            <span class="arrow">&#8594;</span>
+                            <span class="tier-badge sm current">{{ ov['new_tier'] }}</span>
+                        </div>
+                        <div class="override-meta">{{ ov['user_email'] }} &mdash; {{ ov['created_at'][:16] if ov['created_at'] else '-' }}</div>
+                        <div class="override-reason">{{ ov['reason'] }}</div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted p-3">No overrides recorded.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
