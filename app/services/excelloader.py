@@ -50,6 +50,8 @@ def _load_matrix_format(wb, results):
     db.execute('DELETE FROM overrides')
     db.execute('DELETE FROM models')
     db.execute('DELETE FROM parameters')
+    # Reset autoincrement counters so IDs restart from 1
+    db.execute("DELETE FROM sqlite_sequence WHERE name IN ('models', 'parameters', 'model_scores', 'overrides')")
     db.commit()
 
     # 1. Parameters — from 'Parameters' sheet
