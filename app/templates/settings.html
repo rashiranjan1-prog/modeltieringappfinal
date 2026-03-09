@@ -40,8 +40,8 @@
                 <input type="hidden" name="tier_id" value="{{ t['id'] }}">
                 <div class="tier-row">
                     <input type="text" name="tier_name" value="{{ t['name'] }}" class="form-control" placeholder="Tier name">
-                    <input type="number" name="lower_bound" value="{{ t['lower_bound'] }}" class="form-control" step="0.1" placeholder="Min">
-                    <input type="number" name="upper_bound" value="{{ t['upper_bound'] }}" class="form-control" step="0.1" placeholder="Max">
+                    <input type="number" name="lower_bound" value="{{ t['lower_bound'] }}" class="form-control" step="any" placeholder="Min">
+                    <input type="number" name="upper_bound" value="{{ t['upper_bound'] }}" class="form-control" step="any" placeholder="Max">
                     <button type="submit" class="btn btn-sm btn-outline">Save</button>
                     <button type="submit" form="del-{{ t['id'] }}" class="btn btn-sm btn-danger">Del</button>
                 </div>
@@ -57,8 +57,8 @@
                     <input type="hidden" name="action" value="add_tier">
                     <div class="tier-row">
                         <input type="text" name="tier_name" class="form-control" placeholder="New tier name">
-                        <input type="number" name="lower_bound" class="form-control" step="0.1" placeholder="Min">
-                        <input type="number" name="upper_bound" class="form-control" step="0.1" placeholder="Max">
+                        <input type="number" name="lower_bound" class="form-control" step="any" placeholder="Min">
+                        <input type="number" name="upper_bound" class="form-control" step="any" placeholder="Max">
                         <button type="submit" class="btn btn-sm btn-primary">Add</button>
                     </div>
                 </form>
@@ -86,6 +86,17 @@
             <div class="p-3">
                 <a href="{{ url_for('auth.register') }}" class="btn btn-outline btn-sm">+ Create User</a>
             </div>
+        </div>
+    </div>
+
+    <div class="card" style="border: 1px solid #c0392b;">
+        <div class="card-header" style="background:#2a1a1a; color:#e74c3c;">⚠ Danger Zone</div>
+        <div class="card-body">
+            <p class="text-muted" style="margin-bottom:1rem;">Reset all models, parameters and scores so IDs restart from 1. You will need to re-upload your Excel after this.</p>
+            <form method="POST" action="{{ url_for('main.settings') }}" onsubmit="return confirm('This will delete ALL models and scores. Are you sure?');">
+                <input type="hidden" name="action" value="reset_ids">
+                <button type="submit" class="btn btn-danger">🔄 Reset Database &amp; Restart IDs from 1</button>
+            </form>
         </div>
     </div>
 
