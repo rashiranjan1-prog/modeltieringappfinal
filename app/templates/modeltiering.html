@@ -55,7 +55,13 @@
                 <tr>
                     <td><strong>{{ m['name'] }}</strong></td>
                     <td>{{ m['risk_type'] or '-' }}</td>
-                    <td>{{ '%.2f'|format(m['computed_score'] or 0) }}</td>
+                    <td>
+                        {% if score_counts.get(m['id'], 0) > 0 %}
+                            <strong>{{ '%.2f'|format(m['computed_score'] or 0) }}</strong>
+                        {% else %}
+                            <span class="text-muted" title="No parameter scores entered yet">—</span>
+                        {% endif %}
+                    </td>
                     <td><span class="tier-badge">{{ m['computed_tier'] or '-' }}</span></td>
                     <td>
                         <span class="tier-badge current {% if m['current_tier'] != m['computed_tier'] %}overridden{% endif %}">

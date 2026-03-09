@@ -214,7 +214,15 @@ def model_tiering():
     db = get_db()
     models = db.execute('SELECT * FROM models').fetchall()
     tiers = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
-    return render_template('modeltiering.html', models=models, tiers=tiers, has_role=has_role)
+    # Count how many score rows each model has
+    score_counts = {
+        row['model_id']: row['cnt']
+        for row in db.execute(
+            'SELECT model_id, COUNT(*) as cnt FROM model_scores GROUP BY model_id'
+        ).fetchall()
+    }
+    return render_template('modeltiering.html', models=models, tiers=tiers,
+                           score_counts=score_counts, has_role=has_role)
 
 
 @main_bp.route('/tiering/run', methods=['POST'])
@@ -323,7 +331,7 @@ def upload():
             from .services.excelloader import load_excel
             results = load_excel(filepath)
             flash(f"Loaded: {results['models']} models, {results['parameters']} parameters, "
-                  f"{results['tiers']} tiers, {results['settings']} settings. "
+                  f"{results.get('scores', 0)} scores, {results['tiers']} tiers, {results['settings']} settings. "
                   f"Tiering computed for {results.get('computed', 0)} models.", 'success')
         except Exception as e:
             flash(f'Error loading Excel: {str(e)}', 'danger')

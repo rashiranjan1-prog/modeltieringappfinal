@@ -6,11 +6,10 @@
     <h2>Upload Excel File</h2>
 </div>
 
-<div class="card" style="max-width:600px;">
+<div class="card" style="max-width:660px;">
     <div class="card-header">Upload .xlsx File</div>
     <div class="card-body">
-        <p class="text-muted mb-3">Upload an Excel workbook containing sheets: <strong>Models</strong>, <strong>Parameters</strong>, <strong>Tiers</strong>, <strong>Settings</strong>. Tiering will be auto-computed after upload.</p>
-
+        <p class="text-muted mb-3">Upload your Excel workbook — both the <strong>matrix format</strong> and the <strong>standard format</strong> are supported. Tiering will be auto-computed after upload.</p>
         <form method="POST" action="{{ url_for('main.upload') }}" enctype="multipart/form-data">
             <div class="form-group">
                 <label for="file">Excel File (.xlsx)</label>
@@ -21,10 +20,39 @@
     </div>
 </div>
 
-<div class="card mt-4" style="max-width:600px;">
-    <div class="card-header">Expected Sheet Structure</div>
+<div class="card mt-4" style="max-width:660px;">
+    <div class="card-header">Supported Sheet Formats</div>
     <div class="card-body">
         <div class="upload-schema">
+
+            <h4 style="margin-bottom:0.5rem;">Format A — Matrix (your current file)</h4>
+            <p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem;">
+                Models are columns, parameters are rows. Scores are cell values (1–3).
+            </p>
+            <div class="schema-block">
+                <h4>Tiering_Method sheet</h4>
+                <code>Parameter | Sub-Parameter | Description | Value Range | Weight | [Model 1] | [Model 2] | …</code>
+                <p class="text-muted mt-1" style="font-size:0.82rem;">Each model column contains the score (1=Low, 2=Medium, 3=High) for that parameter.</p>
+            </div>
+            <div class="schema-block">
+                <h4>Parameters sheet</h4>
+                <code>Parameter | Sub-Parameter | Description | Low (1) | Medium (2) | High (3)</code>
+            </div>
+            <div class="schema-block">
+                <h4>Models_List sheet</h4>
+                <code>Sl. No. | Model Name | Risk Type</code>
+            </div>
+            <div class="schema-block">
+                <h4>Model_tier sheet <span class="text-muted" style="font-size:0.8rem;">(optional — pre-assigned tiers)</span></h4>
+                <code>Sl. No. | Model Name | Risk Type | Tier</code>
+            </div>
+
+            <hr style="margin: 1.2rem 0; border-color: #333;">
+
+            <h4 style="margin-bottom:0.5rem;">Format B — Standard</h4>
+            <p class="text-muted" style="font-size:0.85rem;margin-bottom:0.75rem;">
+                One row per record in each sheet.
+            </p>
             <div class="schema-block">
                 <h4>Models sheet</h4>
                 <code>name | risk_type</code>
@@ -41,6 +69,11 @@
                 <h4>Settings sheet</h4>
                 <code>key | value</code>
                 <p class="text-muted mt-1">Keys: materiality_weight, criticality_weight, complexity_weight</p>
+            </div>
+            <div class="schema-block">
+                <h4>Scores sheet <span class="text-muted" style="font-size:0.8rem;">(optional)</span></h4>
+                <code>model_name | sub_parameter | level</code>
+                <p class="text-muted mt-1">level: 1=Low, 2=Medium, 3=High</p>
             </div>
         </div>
     </div>

@@ -40,8 +40,8 @@
                 <input type="hidden" name="tier_id" value="{{ t['id'] }}">
                 <div class="tier-row">
                     <input type="text" name="tier_name" value="{{ t['name'] }}" class="form-control" placeholder="Tier name">
-                    <input type="number" name="lower_bound" value="{{ t['lower_bound'] }}" class="form-control" step="0.1" placeholder="Min">
-                    <input type="number" name="upper_bound" value="{{ t['upper_bound'] }}" class="form-control" step="0.1" placeholder="Max">
+                    <input type="number" name="lower_bound" value="{{ t['lower_bound'] }}" class="form-control" step="any" placeholder="Min">
+                    <input type="number" name="upper_bound" value="{{ t['upper_bound'] }}" class="form-control" step="any" placeholder="Max">
                     <button type="submit" class="btn btn-sm btn-outline">Save</button>
                     <button type="submit" form="del-{{ t['id'] }}" class="btn btn-sm btn-danger">Del</button>
                 </div>
@@ -57,8 +57,8 @@
                     <input type="hidden" name="action" value="add_tier">
                     <div class="tier-row">
                         <input type="text" name="tier_name" class="form-control" placeholder="New tier name">
-                        <input type="number" name="lower_bound" class="form-control" step="0.1" placeholder="Min">
-                        <input type="number" name="upper_bound" class="form-control" step="0.1" placeholder="Max">
+                        <input type="number" name="lower_bound" class="form-control" step="any" placeholder="Min">
+                        <input type="number" name="upper_bound" class="form-control" step="any" placeholder="Max">
                         <button type="submit" class="btn btn-sm btn-primary">Add</button>
                     </div>
                 </form>

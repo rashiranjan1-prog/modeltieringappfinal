@@ -24,6 +24,15 @@ def compute_tiering_for_model(model_id):
         'WHERE ms.model_id=?', (model_id,)
     ).fetchall()
 
+    # If no scores have been entered, leave computed_tier as NULL — don't assign Tier1 by default
+    if not scores:
+        db.execute(
+            'UPDATE models SET computed_score=0, computed_tier=NULL, current_tier=NULL, last_computed_at=? WHERE id=?',
+            (datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), model_id)
+        )
+        db.commit()
+        return db.execute('SELECT * FROM models WHERE id=?', (model_id,)).fetchone()
+
     group_raw = {'Materiality': 0.0, 'Criticality': 0.0, 'Complexity': 0.0}
     group_max = {'Materiality': 0.0, 'Criticality': 0.0, 'Complexity': 0.0}
 
@@ -36,7 +45,8 @@ def compute_tiering_for_model(model_id):
             db.execute('UPDATE model_scores SET weighted_score=? WHERE id=?', (ws, s['id']))
 
     def normalize(raw, mx):
-        return (raw / mx * 100) if mx > 0 else 0
+        # Scale to 1–3: 1 = all Low, 3 = all High
+        return (1 + (raw / mx) * 2) if mx > 0 else 1.0
 
     final = (normalize(group_raw['Materiality'], group_max['Materiality']) * mat_w +
              normalize(group_raw['Criticality'], group_max['Criticality']) * crit_w +
@@ -51,7 +61,16 @@ def compute_tiering_for_model(model_id):
     if matched is None and tiers:
         matched = tiers[-1]['name'] if final > tiers[-1]['upper_bound'] else tiers[0]['name']
 
-    current = model['current_tier'] or matched
+    # Preserve current_tier only if it was deliberately overridden
+    # (i.e. it differs from the previously computed tier, meaning a user changed it manually).
+    # Otherwise always sync current_tier to the new computed value.
+    was_overridden = (
+        model['current_tier'] and
+        model['computed_tier'] and
+        model['current_tier'] != model['computed_tier']
+    )
+    current = model['current_tier'] if was_overridden else matched
+
     db.execute(
         'UPDATE models SET computed_score=?, computed_tier=?, current_tier=?, last_computed_at=? WHERE id=?',
         (round(final, 2), matched, current, datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), model_id)
