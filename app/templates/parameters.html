@@ -49,11 +49,17 @@
 </div>
 {% endif %}
 
-{% for group_name, group_params in groups.items() %}
-<div class="card mb-3">
-    <div class="card-header">{{ group_name }}</div>
+{% if groups %}
+<div class="card">
     <div class="card-body p-0">
-        <table class="table">
+        <table class="table" style="table-layout: fixed; width: 100%;">
+            <colgroup>
+                <col style="width: 20%;">
+                <col style="width: 15%;">
+                <col style="width: 52%;">
+                <col style="width: 8%;">
+                {% if has_role('Admin') %}<col style="width: 5%;">{% endif %}
+            </colgroup>
             <thead>
                 <tr>
                     <th>Sub-Parameter</th>
@@ -64,20 +70,31 @@
                 </tr>
             </thead>
             <tbody>
+                {% for group_name, group_params in groups.items() %}
+                <tr>
+                    <td colspan="{% if has_role('Admin') %}5{% else %}4{% endif %}"
+                        style="background: #1a2a3a; color: #7eb8e8; font-weight: 600;
+                               font-size: 0.85rem; letter-spacing: 0.05em;
+                               padding: 0.5rem 1rem; border-top: 2px solid #2a3f55;">
+                        {{ group_name }}
+                    </td>
+                </tr>
                 {% for p in group_params %}
                 <tr>
-                    <td>{{ p['sub_parameter'] or '-' }}</td>
-                    <td>{{ p['criteria'] or '-' }}</td>
-                    <td class="text-muted">{{ p['description'] or '-' }}</td>
+                    <td style="word-wrap: break-word;">{{ p['sub_parameter'] or '-' }}</td>
+                    <td style="word-wrap: break-word;">{{ p['criteria'] or '-' }}</td>
+                    <td class="text-muted" style="word-wrap: break-word;">{{ p['description'] or '-' }}</td>
                     <td>{{ p['weight'] }}</td>
                     {% if has_role('Admin') %}
                     <td>
-                        <form method="POST" action="{{ url_for('main.parameter_delete', param_id=p['id']) }}" onsubmit="return confirm('Delete this parameter?')">
-                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                        <form method="POST" action="{{ url_for('main.parameter_delete', param_id=p['id']) }}"
+                              onsubmit="return confirm('Delete this parameter?')">
+                            <button type="submit" class="btn btn-sm btn-danger">Del</button>
                         </form>
                     </td>
                     {% endif %}
                 </tr>
+                {% endfor %}
                 {% endfor %}
             </tbody>
         </table>
@@ -92,5 +109,5 @@
         {% endif %}
     </div>
 </div>
-{% endfor %}
+{% endif %}
 {% endblock %}
