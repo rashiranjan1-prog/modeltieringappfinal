@@ -78,22 +78,24 @@ def _load_matrix_format(wb, results):
             results['parameters'] += 1
         db.commit()
 
-    # 2. Models — from 'Models_List' sheet
-    ws_models = _sheet(wb, 'Models_List', 'Models')
+    # 2. Models — from 'Model_tier' sheet (has name, risk_type AND pre-assigned tier)
+    ws_models = _sheet(wb, 'Model_tier', 'Model_List', 'Models_List', 'Models')
     model_map = {}  # model_name -> model_id
     if ws_models:
         rows = list(ws_models.iter_rows(values_only=True))
         hdrs = _headers(rows[0])
         name_col = next((i for i, h in enumerate(hdrs) if 'name' in h or 'model' in h), 1)
         risk_col = next((i for i, h in enumerate(hdrs) if 'risk' in h), 2)
+        tier_col = next((i for i, h in enumerate(hdrs) if 'tier' in h), None)
         for row in rows[1:]:
             if not any(row):
                 continue
             name = str(row[name_col]).strip() if row[name_col] else None
             risk = str(row[risk_col]).strip() if len(row) > risk_col and row[risk_col] else ''
+            tier = str(row[tier_col]).strip() if tier_col and len(row) > tier_col and row[tier_col] else None
             if not name or name.lower() in ('none', ''):
                 continue
-            c = db.execute('INSERT INTO models (name, risk_type) VALUES (?,?)', (name, risk))
+            c = db.execute('INSERT INTO models (name, risk_type, current_tier) VALUES (?,?,?)', (name, risk, tier))
             model_map[name] = c.lastrowid
             results['models'] += 1
         db.commit()
@@ -159,21 +161,7 @@ def _load_matrix_format(wb, results):
                     results['scores'] += 1
             db.commit()
 
-    # 4. Pre-assigned tiers — from 'Model_tier' sheet (apply as current_tier override)
-    ws_tier = _sheet(wb, 'Model_tier', 'Model tier')
-    if ws_tier:
-        rows = list(ws_tier.iter_rows(values_only=True))
-        hdrs = _headers(rows[0])
-        name_col = next((i for i, h in enumerate(hdrs) if 'name' in h or 'model' in h), 1)
-        tier_col = next((i for i, h in enumerate(hdrs) if 'tier' in h), 3)
-        for row in rows[1:]:
-            if not any(row):
-                continue
-            name = str(row[name_col]).strip() if row[name_col] else None
-            tier = str(row[tier_col]).strip() if len(row) > tier_col and row[tier_col] else None
-            if name and tier and name in model_map:
-                db.execute('UPDATE models SET current_tier=? WHERE id=?', (tier, model_map[name]))
-        db.commit()
+    # Pre-assigned tiers are already loaded in step 2 from Model_tier sheet
 
 
 # ─── Format A: Standard (Models / Parameters / Tiers / Settings / Scores) ───
