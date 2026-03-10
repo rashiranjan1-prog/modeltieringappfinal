@@ -106,7 +106,14 @@ def _load_matrix_format(wb, results):
         rows = list(ws_matrix.iter_rows(values_only=True))
         if rows:
             header = rows[0]
-            MODEL_START_COL = 5
+            # Auto-detect MODEL_START_COL: find first column in header that matches a known model name
+            # Model names are already in model_map — first header col matching a model name = start
+            MODEL_START_COL = 5  # default fallback
+            if model_map:
+                for col_idx, cell in enumerate(header):
+                    if cell and str(cell).strip() in model_map:
+                        MODEL_START_COL = col_idx
+                        break
             model_names = [str(h).strip() if h else None for h in header[MODEL_START_COL:]]
 
             # Detect score row:
@@ -126,42 +133,34 @@ def _load_matrix_format(wb, results):
                 if is_score_label and decimal_vals:
                     score_row = row
                     break
-                if not is_score_label and row[4] is None and len(decimal_vals) >= 3:
+                # Strategy 2: weight col (anything before MODEL_START_COL) is empty + decimals in model cols
+                pre_cols = [row[i] for i in range(MODEL_START_COL) if i < len(row)]
+                weight_col_empty = all(v is None or str(v).strip() == '' for v in pre_cols[2:])
+                if not is_score_label and weight_col_empty and len(decimal_vals) >= 3:
                     score_row = row
                     break
 
-            # Strategy 3: scan from bottom up — score row is typically the last row
-            # with decimal floats in model columns (handles textbox label = not readable by openpyxl)
+            # Strategy 3 & 4: scan bottom-up for score row
+            # Score row = has decimal float values (e.g. 1.86, 2.16) in model columns
+            # Works even when label is in a textbox (not readable by openpyxl)
             if score_row is None:
-                for row in reversed(data_rows):
-                    vals = [row[MODEL_START_COL + i] for i in range(min(len(model_names), len(row) - MODEL_START_COL))
-                            if MODEL_START_COL + i < len(row)]
-                    # Accept int or float — Excel sometimes stores 2.75 as float, sometimes as Decimal
-                    numeric = [v for v in vals if v is not None and isinstance(v, (int, float))]
-                    # Score rows have decimal values (not whole numbers like 1, 2, 3)
-                    decimal_vals = [v for v in numeric if float(v) != int(float(v))]
-                    in_range = [v for v in decimal_vals if 1.0 <= float(v) <= 3.0]
-                    if len(in_range) >= max(2, len(model_names) // 2):
-                        score_row = row
-                        break
-
-            # Strategy 4: last resort — if still not found, check every row and pick the one
-            # where ALL model column values are numeric and between 1.0–3.0 with decimals
-            # This specifically handles: textbox label + row 22 position in real Excel
-            if score_row is None:
+                model_count = len([m for m in model_names if m])
                 for row in reversed(rows[1:]):
                     if not any(row):
                         continue
-                    # Skip rows that have text in param columns (col 1-4)
-                    has_text = any(isinstance(row[i], str) and row[i].strip()
-                                   for i in range(1, min(5, len(row))))
-                    if has_text:
+                    # Skip rows with text in non-model columns (param/sub-param rows)
+                    pre_cols_text = [row[i] for i in range(min(MODEL_START_COL, len(row)))]
+                    has_param_text = any(isinstance(v, str) and v.strip() and
+                                        not any(k in v.strip().lower() for k in ['tier', 'internal', 'score', 'override', 'mrm'])
+                                        for v in pre_cols_text)
+                    if has_param_text:
                         continue
-                    vals = [row[MODEL_START_COL + i] for i in range(min(len(model_names), len(row) - MODEL_START_COL))
+                    vals = [row[MODEL_START_COL + i] for i in range(min(model_count, len(row) - MODEL_START_COL))
                             if MODEL_START_COL + i < len(row)]
-                    numeric = [v for v in vals if v is not None and isinstance(v, (int, float))]
-                    decimal_vals = [v for v in numeric if float(v) != int(float(v)) and 1.0 <= float(v) <= 3.0]
-                    if len(decimal_vals) >= max(2, len([m for m in model_names if m]) // 2):
+                    decimal_vals = [v for v in vals
+                                    if v is not None and isinstance(v, float)
+                                    and float(v) != int(float(v)) and 1.0 <= float(v) <= 3.0]
+                    if len(decimal_vals) >= max(2, model_count // 2):
                         score_row = row
                         break
 
