@@ -100,65 +100,85 @@ def _load_matrix_format(wb, results):
             results['models'] += 1
         db.commit()
 
-    # 3. Scores + weights — from 'Tiering_Method' matrix sheet
+    # 3. Scores — from 'Tiering_Method' matrix sheet
     ws_matrix = _sheet(wb, 'Tiering_Method', 'Tiering Method')
     if ws_matrix:
         rows = list(ws_matrix.iter_rows(values_only=True))
         if rows:
             header = rows[0]
-            # Cols: 0=Parameter, 1=Sub-Parameter, 2=Description, 3=Value Range, 4=Weight, 5+=models
             MODEL_START_COL = 5
             model_names = [str(h).strip() if h else None for h in header[MODEL_START_COL:]]
 
+            # Detect score row:
+            # Strategy 1 — label in col[0] or col[1] contains a score keyword
+            # Strategy 2 — weight col (col[4]) is empty AND model cols have 3+ decimal floats
+            # Strategy 3 — fallback: scan bottom-up for first row with majority decimal floats
+            # (handles cases where label is in a textbox and not readable by openpyxl)
+            score_row = None
+            data_rows = [r for r in rows[1:] if any(r)]
+
+            for row in data_rows:
+                label = str(row[0] or '').strip().lower() + str(row[1] or '').strip().lower()
+                is_score_label = any(k in label for k in ['internal', 'score', 'total', 'final', 'weighted'])
+                vals = [row[MODEL_START_COL + i] for i in range(min(len(model_names), len(row) - MODEL_START_COL))
+                        if MODEL_START_COL + i < len(row)]
+                decimal_vals = [v for v in vals if v is not None and isinstance(v, float) and v != int(v)]
+                if is_score_label and decimal_vals:
+                    score_row = row
+                    break
+                if not is_score_label and row[4] is None and len(decimal_vals) >= 3:
+                    score_row = row
+                    break
+
+            # Strategy 3: scan from bottom up — score row is typically the last row
+            # with decimal floats in the model columns (textbox label = not readable)
+            if score_row is None:
+                for row in reversed(data_rows):
+                    vals = [row[MODEL_START_COL + i] for i in range(min(len(model_names), len(row) - MODEL_START_COL))
+                            if MODEL_START_COL + i < len(row)]
+                    numeric = [v for v in vals if v is not None and isinstance(v, (int, float))]
+                    decimal_vals = [v for v in numeric if isinstance(v, float) and v != int(v)]
+                    # Must have decimals in majority of model columns and values in 1-3 range
+                    in_range = [v for v in decimal_vals if 1.0 <= v <= 3.0]
+                    if len(in_range) >= max(2, len(model_names) // 2):
+                        score_row = row
+                        break
+
+            # Apply direct scores to models if score row found
+            if score_row is not None:
+                for col_idx, model_name in enumerate(model_names):
+                    if not model_name or model_name not in model_map:
+                        continue
+                    actual_col = MODEL_START_COL + col_idx
+                    val = score_row[actual_col] if actual_col < len(score_row) else None
+                    if val is None:
+                        continue
+                    try:
+                        score = round(float(val), 2)
+                        model_id = model_map[model_name]
+                        db.execute('UPDATE models SET computed_score=?, last_computed_at=datetime("now") WHERE id=?',
+                                   (score, model_id))
+                        results['scores'] += 1
+                    except (ValueError, TypeError):
+                        continue
+                db.commit()
+
+            # Update weights from parameter rows
             current_group = None
             for row in rows[1:]:
-                if not any(row):
-                    continue
                 grp = str(row[0]).strip() if row[0] else None
                 sub = str(row[1]).strip() if row[1] else None
                 weight = row[4]
                 if grp:
                     current_group = grp
-                if not sub:
+                if not sub or weight is None:
                     continue
-
-                # Update weight in parameters table
                 try:
-                    w = float(weight) if weight is not None else 1.0
+                    w = float(weight)
+                    if sub in param_map:
+                        db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, param_map[sub]))
                 except (ValueError, TypeError):
-                    w = 1.0
-
-                if sub in param_map:
-                    db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, param_map[sub]))
-
-                # Load scores for each model
-                for col_idx, model_name in enumerate(model_names):
-                    if not model_name or model_name not in model_map:
-                        continue
-                    score_val = row[MODEL_START_COL + col_idx]
-                    try:
-                        level = int(float(score_val))
-                        level = max(1, min(3, level))
-                    except (ValueError, TypeError):
-                        continue
-
-                    model_id = model_map[model_name]
-                    param_id = param_map.get(sub)
-                    if not param_id:
-                        continue
-
-                    existing = db.execute(
-                        'SELECT id FROM model_scores WHERE model_id=? AND parameter_id=?',
-                        (model_id, param_id)
-                    ).fetchone()
-                    if existing:
-                        db.execute('UPDATE model_scores SET level=? WHERE id=?', (level, existing['id']))
-                    else:
-                        db.execute(
-                            'INSERT INTO model_scores (model_id, parameter_id, level) VALUES (?,?,?)',
-                            (model_id, param_id, level)
-                        )
-                    results['scores'] += 1
+                    pass
             db.commit()
 
     # Pre-assigned tiers are already loaded in step 2 from Model_tier sheet
