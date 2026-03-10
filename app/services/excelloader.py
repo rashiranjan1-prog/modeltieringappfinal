@@ -24,7 +24,7 @@ def _headers(row):
 
 
 def load_excel(filepath):
-    wb = load_workbook(filepath, read_only=True)
+    wb = load_workbook(filepath, data_only=True)
     results = {'models': 0, 'parameters': 0, 'tiers': 0, 'settings': 0, 'scores': 0, 'computed': 0}
 
     # Detect format
@@ -116,53 +116,33 @@ def _load_matrix_format(wb, results):
                         break
             model_names = [str(h).strip() if h else None for h in header[MODEL_START_COL:]]
 
-            # Detect score row:
-            # Strategy 1 — label in col[0] or col[1] contains a score keyword
-            # Strategy 2 — weight col (col[4]) is empty AND model cols have 3+ decimal floats
-            # Strategy 3 — fallback: scan bottom-up for first row with majority decimal floats
-            # (handles cases where label is in a textbox and not readable by openpyxl)
-            score_row = None
-            data_rows = [r for r in rows[1:] if any(r)]
+            # Find score row: scan every row, pick the one with the most decimal values
+            # in the 1.0-3.0 range across model columns.
+            # Works even when label is in a textbox (not readable by openpyxl).
+            model_count = len([m for m in model_names if m])
+            best_row = None
+            best_count = 0
 
-            for row in data_rows:
-                label = str(row[0] or '').strip().lower() + str(row[1] or '').strip().lower()
-                is_score_label = any(k in label for k in ['internal', 'score', 'total', 'final', 'weighted'])
-                vals = [row[MODEL_START_COL + i] for i in range(min(len(model_names), len(row) - MODEL_START_COL))
-                        if MODEL_START_COL + i < len(row)]
-                decimal_vals = [v for v in vals if v is not None and isinstance(v, float) and v != int(v)]
-                if is_score_label and decimal_vals:
-                    score_row = row
-                    break
-                # Strategy 2: weight col (anything before MODEL_START_COL) is empty + decimals in model cols
-                pre_cols = [row[i] for i in range(MODEL_START_COL) if i < len(row)]
-                weight_col_empty = all(v is None or str(v).strip() == '' for v in pre_cols[2:])
-                if not is_score_label and weight_col_empty and len(decimal_vals) >= 3:
-                    score_row = row
-                    break
+            for row in rows[1:]:
+                if not any(row):
+                    continue
+                decimal_count = 0
+                for i in range(model_count):
+                    actual_col = MODEL_START_COL + i
+                    if actual_col >= len(row):
+                        continue
+                    v = row[actual_col]
+                    try:
+                        fv = float(v)
+                        if 1.0 < fv < 3.0 and fv != int(fv):
+                            decimal_count += 1
+                    except (TypeError, ValueError):
+                        pass
+                if decimal_count > best_count:
+                    best_count = decimal_count
+                    best_row = row
 
-            # Strategy 3 & 4: scan bottom-up for score row
-            # Score row = has decimal float values (e.g. 1.86, 2.16) in model columns
-            # Works even when label is in a textbox (not readable by openpyxl)
-            if score_row is None:
-                model_count = len([m for m in model_names if m])
-                for row in reversed(rows[1:]):
-                    if not any(row):
-                        continue
-                    # Skip rows with text in non-model columns (param/sub-param rows)
-                    pre_cols_text = [row[i] for i in range(min(MODEL_START_COL, len(row)))]
-                    has_param_text = any(isinstance(v, str) and v.strip() and
-                                        not any(k in v.strip().lower() for k in ['tier', 'internal', 'score', 'override', 'mrm'])
-                                        for v in pre_cols_text)
-                    if has_param_text:
-                        continue
-                    vals = [row[MODEL_START_COL + i] for i in range(min(model_count, len(row) - MODEL_START_COL))
-                            if MODEL_START_COL + i < len(row)]
-                    decimal_vals = [v for v in vals
-                                    if v is not None and isinstance(v, float)
-                                    and float(v) != int(float(v)) and 1.0 <= float(v) <= 3.0]
-                    if len(decimal_vals) >= max(2, model_count // 2):
-                        score_row = row
-                        break
+            score_row = best_row if best_count >= max(1, model_count * 0.3) else None
 
             # Log which strategy found the score row
             if score_row is not None:
