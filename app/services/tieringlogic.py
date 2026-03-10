@@ -24,8 +24,27 @@ def compute_tiering_for_model(model_id):
         'WHERE ms.model_id=?', (model_id,)
     ).fetchall()
 
-    # If no scores have been entered, leave computed_tier as NULL — don't assign Tier1 by default
+    # If no parameter scores entered, check if Excel already loaded a direct computed_score
     if not scores:
+        # If computed_score was already set directly from Excel score row, just assign tier
+        existing_score = model['computed_score']
+        if existing_score and existing_score > 0:
+            tiers = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
+            matched = None
+            for t in tiers:
+                if t['lower_bound'] <= existing_score <= t['upper_bound']:
+                    matched = t['name']
+                    break
+            if matched is None and tiers:
+                matched = tiers[-1]['name'] if existing_score > tiers[-1]['upper_bound'] else tiers[0]['name']
+            was_overridden = (model['current_tier'] and model['computed_tier'] and
+                              model['current_tier'] != model['computed_tier'])
+            current = model['current_tier'] if was_overridden else matched
+            db.execute('UPDATE models SET computed_tier=?, current_tier=? WHERE id=?',
+                       (matched, current, model_id))
+            db.commit()
+            return db.execute('SELECT * FROM models WHERE id=?', (model_id,)).fetchone()
+        # No scores at all — leave as NULL
         db.execute(
             'UPDATE models SET computed_score=0, computed_tier=NULL, current_tier=NULL, last_computed_at=? WHERE id=?',
             (datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'), model_id)
