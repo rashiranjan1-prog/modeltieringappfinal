@@ -330,8 +330,9 @@ def upload():
         try:
             from .services.excelloader import load_excel
             results = load_excel(filepath)
+            score_msg = f"{results.get('scores',0)} scores" if results.get('score_row_found') else '⚠ score row not detected'
             flash(f"Loaded: {results['models']} models, {results['parameters']} parameters, "
-                  f"{results.get('scores', 0)} scores, {results['tiers']} tiers, {results['settings']} settings. "
+                  f"{score_msg}, {results['tiers']} tiers, {results['settings']} settings. "
                   f"Tiering computed for {results.get('computed', 0)} models.", 'success')
         except Exception as e:
             flash(f'Error loading Excel: {str(e)}', 'danger')
