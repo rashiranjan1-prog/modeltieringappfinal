@@ -131,19 +131,43 @@ def _load_matrix_format(wb, results):
                     break
 
             # Strategy 3: scan from bottom up — score row is typically the last row
-            # with decimal floats in the model columns (textbox label = not readable)
+            # with decimal floats in model columns (handles textbox label = not readable by openpyxl)
             if score_row is None:
                 for row in reversed(data_rows):
                     vals = [row[MODEL_START_COL + i] for i in range(min(len(model_names), len(row) - MODEL_START_COL))
                             if MODEL_START_COL + i < len(row)]
+                    # Accept int or float — Excel sometimes stores 2.75 as float, sometimes as Decimal
                     numeric = [v for v in vals if v is not None and isinstance(v, (int, float))]
-                    decimal_vals = [v for v in numeric if isinstance(v, float) and v != int(v)]
-                    # Must have decimals in majority of model columns and values in 1-3 range
-                    in_range = [v for v in decimal_vals if 1.0 <= v <= 3.0]
+                    # Score rows have decimal values (not whole numbers like 1, 2, 3)
+                    decimal_vals = [v for v in numeric if float(v) != int(float(v))]
+                    in_range = [v for v in decimal_vals if 1.0 <= float(v) <= 3.0]
                     if len(in_range) >= max(2, len(model_names) // 2):
                         score_row = row
                         break
 
+            # Strategy 4: last resort — if still not found, check every row and pick the one
+            # where ALL model column values are numeric and between 1.0–3.0 with decimals
+            # This specifically handles: textbox label + row 22 position in real Excel
+            if score_row is None:
+                for row in reversed(rows[1:]):
+                    if not any(row):
+                        continue
+                    # Skip rows that have text in param columns (col 1-4)
+                    has_text = any(isinstance(row[i], str) and row[i].strip()
+                                   for i in range(1, min(5, len(row))))
+                    if has_text:
+                        continue
+                    vals = [row[MODEL_START_COL + i] for i in range(min(len(model_names), len(row) - MODEL_START_COL))
+                            if MODEL_START_COL + i < len(row)]
+                    numeric = [v for v in vals if v is not None and isinstance(v, (int, float))]
+                    decimal_vals = [v for v in numeric if float(v) != int(float(v)) and 1.0 <= float(v) <= 3.0]
+                    if len(decimal_vals) >= max(2, len([m for m in model_names if m]) // 2):
+                        score_row = row
+                        break
+
+            # Log which strategy found the score row
+            if score_row is not None:
+                results['score_row_found'] = True
             # Apply direct scores to models if score row found
             if score_row is not None:
                 for col_idx, model_name in enumerate(model_names):
