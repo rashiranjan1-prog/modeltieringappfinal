@@ -11,15 +11,19 @@ from .services.tieringlogic import compute_tiering_for_model, compute_tiering_fo
 
 main_bp = Blueprint('main', __name__)
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-# ─── Dashboard ──────────────────────────────────────────────────────────────
+GRP_ORDER = "CASE grp WHEN 'Materiality' THEN 1 WHEN 'Criticality' THEN 2 WHEN 'Complexity' THEN 3 ELSE 4 END"
+
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @main_bp.route('/')
 @login_required
 def dashboard():
     db = get_db()
     models = db.execute('SELECT * FROM models').fetchall()
-    tiers = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
+    tiers  = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
 
     tier_counts = {t['name']: 0 for t in tiers}
     for m in models:
@@ -38,13 +42,11 @@ def dashboard():
         'risk_labels': list(risk_counts.keys()),
         'risk_values': list(risk_counts.values()),
     }
-    return render_template('dashboard.html',
-                           models=models,
-                           tier_counts=tier_counts,
+    return render_template('dashboard.html', models=models, tier_counts=tier_counts,
                            chart_data_json=json.dumps(chart_data))
 
 
-# ─── Models ─────────────────────────────────────────────────────────────────
+# ── Models ────────────────────────────────────────────────────────────────────
 
 @main_bp.route('/models')
 @login_required
@@ -59,12 +61,12 @@ def models_list():
 @roles_required('Admin', 'Developer')
 def model_new():
     if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        risk_type = request.form.get('risk_type', '').strip()
+        name     = request.form.get('name', '').strip()
+        risk_type= request.form.get('risk_type', '').strip()
         if not name:
             flash('Model name is required.', 'danger')
             return render_template('modelnew.html')
-        db = get_db()
+        db  = get_db()
         cur = db.execute('INSERT INTO models (name, risk_type) VALUES (?,?)', (name, risk_type))
         db.commit()
         flash(f'Model "{name}" created.', 'success')
@@ -79,31 +81,26 @@ def model_detail(model_id):
     model = db.execute('SELECT * FROM models WHERE id=?', (model_id,)).fetchone()
     if not model:
         abort(404)
-    parameters = db.execute('SELECT * FROM parameters ORDER BY grp').fetchall()
+
+    parameters  = db.execute(
+        f'SELECT * FROM parameters ORDER BY {GRP_ORDER}, id'
+    ).fetchall()
     scores_rows = db.execute('SELECT * FROM model_scores WHERE model_id=?', (model_id,)).fetchall()
-    scores_map = {s['parameter_id']: s for s in scores_rows}
-    overrides = db.execute(
+    scores_map  = {s['parameter_id']: s for s in scores_rows}
+    overrides   = db.execute(
         'SELECT o.*, u.email as user_email FROM overrides o JOIN users u ON u.id=o.user_id '
         'WHERE o.model_id=? ORDER BY o.created_at DESC', (model_id,)
     ).fetchall()
     tiers = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
 
-    # Group parameters
     groups = {}
     for p in parameters:
-        grp = p['grp']
-        if grp not in groups:
-            groups[grp] = []
-        groups[grp].append(p)
+        groups.setdefault(p['grp'], []).append(p)
 
     return render_template('modeldetail.html',
-                           model=model,
-                           parameters=parameters,
-                           groups=groups,
-                           scores_map=scores_map,
-                           overrides=overrides,
-                           tiers=tiers,
-                           has_role=has_role)
+                           model=model, parameters=parameters, groups=groups,
+                           scores_map=scores_map, overrides=overrides,
+                           tiers=tiers, has_role=has_role)
 
 
 @main_bp.route('/models/<int:model_id>/scores', methods=['POST'])
@@ -111,14 +108,24 @@ def model_detail(model_id):
 @roles_required('Admin', 'Developer')
 def model_save_scores(model_id):
     db = get_db()
-    model = db.execute('SELECT * FROM models WHERE id=?', (model_id,)).fetchone()
-    if not model:
+    if not db.execute('SELECT id FROM models WHERE id=?', (model_id,)).fetchone():
         abort(404)
+
     parameters = db.execute('SELECT * FROM parameters').fetchall()
+
+    # Remove stale rows for deleted parameters
+    db.execute(
+        'DELETE FROM model_scores WHERE model_id=? '
+        'AND parameter_id NOT IN (SELECT id FROM parameters)', (model_id,)
+    )
+
     for p in parameters:
-        level = max(1, min(3, int(request.form.get(f'level_{p["id"]}', 1))))
-        existing = db.execute('SELECT id FROM model_scores WHERE model_id=? AND parameter_id=?',
-                              (model_id, p['id'])).fetchone()
+        raw = request.form.get(f'level_{p["id"]}')
+        level = max(1, min(3, int(raw))) if raw else 1
+        existing = db.execute(
+            'SELECT id FROM model_scores WHERE model_id=? AND parameter_id=?',
+            (model_id, p['id'])
+        ).fetchone()
         if existing:
             db.execute('UPDATE model_scores SET level=? WHERE model_id=? AND parameter_id=?',
                        (level, model_id, p['id']))
@@ -140,7 +147,7 @@ def model_override(model_id):
     if not model:
         abort(404)
     new_tier = request.form.get('new_tier', '').strip()
-    reason = request.form.get('reason', '').strip()
+    reason   = request.form.get('reason', '').strip()
     if not new_tier or not reason:
         flash('Tier and reason are required.', 'danger')
         return redirect(url_for('main.model_detail', model_id=model_id))
@@ -153,20 +160,20 @@ def model_override(model_id):
     return redirect(url_for('main.model_detail', model_id=model_id))
 
 
-# ─── Parameters ─────────────────────────────────────────────────────────────
+# ── Parameters ────────────────────────────────────────────────────────────────
 
 @main_bp.route('/parameters')
 @login_required
 def parameters_list():
     db = get_db()
-    params = db.execute('SELECT * FROM parameters ORDER BY grp, sub_parameter').fetchall()
+    params = db.execute(
+        f'SELECT * FROM parameters ORDER BY {GRP_ORDER}, id'
+    ).fetchall()
     groups = {}
     for p in params:
-        grp = p['grp']
-        if grp not in groups:
-            groups[grp] = []
-        groups[grp].append(p)
-    return render_template('parameters.html', parameters=params, groups=groups, has_role=has_role)
+        groups.setdefault(p['grp'], []).append(p)
+    return render_template('parameters.html', parameters=params, groups=groups,
+                           has_role=has_role)
 
 
 @main_bp.route('/parameters/new', methods=['GET', 'POST'])
@@ -176,23 +183,65 @@ def parameter_new():
     if request.method == 'POST':
         db = get_db()
         db.execute(
-            'INSERT INTO parameters (grp, sub_parameter, criteria, description, weight) VALUES (?,?,?,?,?)',
+            'INSERT INTO parameters '
+            '(grp, sub_parameter, criteria, description, weight,'
+            ' level1_label, level2_label, level3_label) VALUES (?,?,?,?,?,?,?,?)',
             (request.form.get('group', '').strip(),
              request.form.get('sub_parameter', '').strip(),
              request.form.get('criteria', '').strip(),
              request.form.get('description', '').strip(),
-             float(request.form.get('weight', 1.0)))
+             float(request.form.get('weight', 1.0)),
+             request.form.get('level1_label', '').strip(),
+             request.form.get('level2_label', '').strip(),
+             request.form.get('level3_label', '').strip())
         )
         db.commit()
-        flash('Parameter created.', 'success')
+        compute_tiering_for_all()
+        flash('Parameter created and scores recomputed.', 'success')
         return redirect(url_for('main.parameters_list'))
+
     db = get_db()
-    params = db.execute('SELECT * FROM parameters ORDER BY grp, sub_parameter').fetchall()
+    params = db.execute(f'SELECT * FROM parameters ORDER BY {GRP_ORDER}, id').fetchall()
     groups = {}
     for p in params:
-        g = p['grp']
-        groups.setdefault(g, []).append(p)
-    return render_template('parameters.html', parameters=params, groups=groups, show_form=True, has_role=has_role)
+        groups.setdefault(p['grp'], []).append(p)
+    return render_template('parameters.html', parameters=params, groups=groups,
+                           show_form=True, has_role=has_role)
+
+
+@main_bp.route('/parameters/<int:param_id>/edit', methods=['GET', 'POST'])
+@login_required
+@roles_required('Admin', 'Developer')
+def parameter_edit(param_id):
+    db = get_db()
+    param = db.execute('SELECT * FROM parameters WHERE id=?', (param_id,)).fetchone()
+    if not param:
+        abort(404)
+    if request.method == 'POST':
+        db.execute(
+            'UPDATE parameters SET grp=?, sub_parameter=?, criteria=?, description=?,'
+            ' weight=?, level1_label=?, level2_label=?, level3_label=? WHERE id=?',
+            (request.form.get('group', '').strip(),
+             request.form.get('sub_parameter', '').strip(),
+             request.form.get('criteria', '').strip(),
+             request.form.get('description', '').strip(),
+             float(request.form.get('weight', 1.0)),
+             request.form.get('level1_label', '').strip(),
+             request.form.get('level2_label', '').strip(),
+             request.form.get('level3_label', '').strip(),
+             param_id)
+        )
+        db.commit()
+        compute_tiering_for_all()
+        flash('Parameter updated and scores recomputed.', 'success')
+        return redirect(url_for('main.parameters_list'))
+
+    params = db.execute(f'SELECT * FROM parameters ORDER BY {GRP_ORDER}, id').fetchall()
+    groups = {}
+    for p in params:
+        groups.setdefault(p['grp'], []).append(p)
+    return render_template('parameters.html', parameters=params, groups=groups,
+                           edit_param=param, has_role=has_role)
 
 
 @main_bp.route('/parameters/<int:param_id>/delete', methods=['POST'])
@@ -206,15 +255,14 @@ def parameter_delete(param_id):
     return redirect(url_for('main.parameters_list'))
 
 
-# ─── Tiering ────────────────────────────────────────────────────────────────
+# ── Tiering ───────────────────────────────────────────────────────────────────
 
 @main_bp.route('/tiering')
 @login_required
 def model_tiering():
     db = get_db()
     models = db.execute('SELECT * FROM models').fetchall()
-    tiers = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
-    # Count how many score rows each model has
+    tiers  = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
     score_counts = {
         row['model_id']: row['cnt']
         for row in db.execute(
@@ -234,12 +282,12 @@ def run_tiering():
     return redirect(url_for('main.model_tiering'))
 
 
-# ─── Reports ────────────────────────────────────────────────────────────────
+# ── Reports ───────────────────────────────────────────────────────────────────
 
 @main_bp.route('/reports')
 @login_required
 def reports_list():
-    db = get_db()
+    db   = get_db()
     user = get_current_user()
     reports = db.execute(
         'SELECT r.*, u.email as user_email FROM reports r JOIN users u ON u.id=r.user_id '
@@ -251,11 +299,11 @@ def reports_list():
 @main_bp.route('/reports/tiering')
 @login_required
 def report_tiering():
-    db = get_db()
+    db          = get_db()
     risk_filter = request.args.get('risk_type', '')
     tier_filter = request.args.get('tier', '')
 
-    query = 'SELECT * FROM models WHERE 1=1'
+    query  = 'SELECT * FROM models WHERE 1=1'
     params = []
     if risk_filter:
         query += ' AND risk_type=?'
@@ -264,23 +312,28 @@ def report_tiering():
         query += ' AND current_tier=?'
         params.append(tier_filter)
 
-    models = db.execute(query, params).fetchall()
-    risk_types = [r[0] for r in db.execute('SELECT DISTINCT risk_type FROM models WHERE risk_type IS NOT NULL').fetchall()]
+    models     = db.execute(query, params).fetchall()
+    risk_types = [r[0] for r in db.execute(
+        'SELECT DISTINCT risk_type FROM models WHERE risk_type IS NOT NULL'
+    ).fetchall()]
     tiers = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
 
     return render_template('reporttiering.html',
                            models=models, risk_types=risk_types, tiers=tiers,
-                           risk_filter=risk_filter, tier_filter=tier_filter, has_role=has_role)
+                           risk_filter=risk_filter, tier_filter=tier_filter,
+                           has_role=has_role)
 
 
 @main_bp.route('/reports/save', methods=['POST'])
 @login_required
 def report_save():
-    db = get_db()
+    db   = get_db()
     user = get_current_user()
-    name = request.form.get('name', '').strip() or f'Report {datetime.utcnow().strftime("%Y-%m-%d")}'
-    filters = json.dumps({'risk_type': request.form.get('risk_type', ''), 'tier': request.form.get('tier', '')})
-    db.execute('INSERT INTO reports (user_id, name, filters_json) VALUES (?,?,?)', (user.id, name, filters))
+    name    = request.form.get('name', '').strip() or f'Report {datetime.utcnow().strftime("%Y-%m-%d")}'
+    filters = json.dumps({'risk_type': request.form.get('risk_type', ''),
+                          'tier': request.form.get('tier', '')})
+    db.execute('INSERT INTO reports (user_id, name, filters_json) VALUES (?,?,?)',
+               (user.id, name, filters))
     db.commit()
     flash('Report saved.', 'success')
     return redirect(url_for('main.reports_list'))
@@ -289,11 +342,11 @@ def report_save():
 @main_bp.route('/reports/export/csv')
 @login_required
 def report_export_csv():
-    db = get_db()
+    db          = get_db()
     risk_filter = request.args.get('risk_type', '')
     tier_filter = request.args.get('tier', '')
 
-    query = 'SELECT * FROM models WHERE 1=1'
+    query  = 'SELECT * FROM models WHERE 1=1'
     params = []
     if risk_filter:
         query += ' AND risk_type=?'
@@ -307,13 +360,14 @@ def report_export_csv():
     writer = csv.writer(output)
     writer.writerow(['Model Name', 'Risk Type', 'Computed Score', 'Computed Tier', 'Current Tier'])
     for m in models:
-        writer.writerow([m['name'], m['risk_type'], m['computed_score'], m['computed_tier'], m['current_tier']])
+        writer.writerow([m['name'], m['risk_type'], m['computed_score'],
+                         m['computed_tier'], m['current_tier']])
 
     return Response(output.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=tiering_report.csv'})
 
 
-# ─── Upload ──────────────────────────────────────────────────────────────────
+# ── Upload ────────────────────────────────────────────────────────────────────
 
 @main_bp.route('/upload', methods=['GET', 'POST'])
 @login_required
@@ -325,22 +379,27 @@ def upload():
             flash('Please upload a valid .xlsx file.', 'danger')
             return render_template('upload.html')
         upload_dir = current_app.config['UPLOAD_FOLDER']
-        filepath = os.path.join(upload_dir, file.filename)
+        filepath   = os.path.join(upload_dir, file.filename)
         file.save(filepath)
         try:
             from .services.excelloader import load_excel
-            results = load_excel(filepath)
-            score_msg = f"{results.get('scores',0)} scores" if results.get('score_row_found') else '⚠ score row not detected'
-            flash(f"Loaded: {results['models']} models, {results['parameters']} parameters, "
-                  f"{score_msg}, {results['tiers']} tiers, {results['settings']} settings. "
-                  f"Tiering computed for {results.get('computed', 0)} models.", 'success')
+            results   = load_excel(filepath)
+            score_msg = (f"{results.get('scores',0)} scores"
+                         if results.get('score_row_found')
+                         else '⚠ score row not detected')
+            flash(
+                f"Loaded: {results['models']} models, {results['parameters']} parameters, "
+                f"{score_msg}, {results['tiers']} tiers. "
+                f"Tiering computed for {results.get('computed', 0)} models.",
+                'success'
+            )
         except Exception as e:
             flash(f'Error loading Excel: {str(e)}', 'danger')
         return redirect(url_for('main.upload'))
     return render_template('upload.html')
 
 
-# ─── Settings ────────────────────────────────────────────────────────────────
+# ── Settings ──────────────────────────────────────────────────────────────────
 
 @main_bp.route('/settings', methods=['GET', 'POST'])
 @login_required
@@ -356,12 +415,14 @@ def settings():
                 val = request.form.get(key, '')
                 db.execute('INSERT OR REPLACE INTO config_kv (key, value) VALUES (?,?)', (key, val))
             db.commit()
-            flash('Weights updated.', 'success')
+            compute_tiering_for_all()
+            flash('Weights updated and scores recomputed.', 'success')
 
         elif action == 'tier':
             tid = request.form.get('tier_id')
             db.execute('UPDATE tiers SET name=?, lower_bound=?, upper_bound=? WHERE id=?',
-                       (request.form.get('tier_name'), float(request.form.get('lower_bound', 0)),
+                       (request.form.get('tier_name'),
+                        float(request.form.get('lower_bound', 0)),
                         float(request.form.get('upper_bound', 100)), tid))
             db.commit()
             flash('Tier updated.', 'success')
@@ -385,9 +446,10 @@ def settings():
             db.execute('DELETE FROM overrides')
             db.execute('DELETE FROM models')
             db.execute('DELETE FROM parameters')
-            db.execute("DELETE FROM sqlite_sequence WHERE name IN ('models', 'parameters', 'model_scores', 'overrides')")
+            db.execute("DELETE FROM sqlite_sequence WHERE name IN "
+                       "('models','parameters','model_scores','overrides')")
             db.commit()
-            flash('Database reset. Please re-upload your Excel — IDs will now start from 1.', 'success')
+            flash('Database reset. Re-upload your Excel to start fresh.', 'success')
 
         return redirect(url_for('main.settings'))
 
@@ -402,4 +464,4 @@ def settings():
                            tiers=tiers, users=users,
                            mat_w=gcfg('materiality_weight', '0.4'),
                            crit_w=gcfg('criticality_weight', '0.4'),
-                           comp_w=gcfg('complexity_weight', '0.2'))
+                           comp_w=gcfg('complexity_weight',  '0.2'))
