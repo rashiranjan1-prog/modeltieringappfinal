@@ -55,6 +55,7 @@ def _load_matrix_format(wb, results):
     db.commit()
 
     # 1. Parameters — from 'Parameters' sheet
+    # Columns: A=Group, B=Sub-Parameter, C=Description, D=Low(1), E=Medium(2), F=High(3)
     ws_params = _sheet(wb, 'Parameters')
     param_map = {}  # sub_parameter_name -> param_id
     if ws_params:
@@ -63,16 +64,19 @@ def _load_matrix_format(wb, results):
         for row in rows[1:]:
             if not any(row):
                 continue
-            grp = str(row[0]).strip() if row[0] else None
-            sub = str(row[1]).strip() if row[1] else None
-            desc = str(row[2]).strip() if row[2] else None
+            grp  = str(row[0]).strip() if len(row) > 0 and row[0] else None
+            sub  = str(row[1]).strip() if len(row) > 1 and row[1] else None
+            desc = str(row[2]).strip() if len(row) > 2 and row[2] else None
+            l1   = str(row[3]).strip() if len(row) > 3 and row[3] else 'Low'
+            l2   = str(row[4]).strip() if len(row) > 4 and row[4] else 'Medium'
+            l3   = str(row[5]).strip() if len(row) > 5 and row[5] else 'High'
             if grp:
                 current_group = grp
             if not sub or not current_group:
                 continue
             c = db.execute(
-                'INSERT INTO parameters (grp, sub_parameter, criteria, description, weight) VALUES (?,?,?,?,?)',
-                (current_group, sub, '', desc or '', 1.0)
+                'INSERT INTO parameters (grp, sub_parameter, criteria, description, weight, level1_label, level2_label, level3_label) VALUES (?,?,?,?,?,?,?,?)',
+                (current_group, sub, '', desc or '', 1.0, l1, l2, l3)
             )
             param_map[sub] = c.lastrowid
             results['parameters'] += 1
@@ -116,17 +120,48 @@ def _load_matrix_format(wb, results):
                         break
             model_names = [str(h).strip() if h else None for h in header[MODEL_START_COL:]]
 
-            # Find score row: scan every row, pick the one with the most decimal values
-            # in the 1.0-3.0 range across model columns.
-            # Works even when label is in a textbox (not readable by openpyxl).
+            # Find the Internal score row (row 22 in real Excel).
+            # Key insight: the Internal row comes AFTER all parameter rows.
+            # Parameter rows have an integer score (1/2/3) in model cols.
+            # Group subtotal rows have decimals but also have a % weight in col E/F.
+            # Internal row: model cols have decimals, AND pre-model cols are all empty/None.
             model_count = len([m for m in model_names if m])
-            best_row = None
-            best_count = 0
 
-            for row in rows[1:]:
+            # First pass: find the last parameter row index (rows with integer 1/2/3 scores)
+            last_param_row_idx = 0
+            for idx, row in enumerate(rows[1:], 1):
                 if not any(row):
                     continue
-                decimal_count = 0
+                # A param row has a sub-param name AND integer scores in model cols
+                sub = str(row[1] or '').strip()
+                if sub and sub not in ('', 'None'):
+                    model_vals = [row[MODEL_START_COL + i] for i in range(min(5, model_count))
+                                  if MODEL_START_COL + i < len(row)]
+                    int_scores = [v for v in model_vals if v in (1, 2, 3)]
+                    if len(int_scores) >= 2:
+                        last_param_row_idx = idx
+
+            # Second pass: find score row AFTER last param row
+            # It must have decimal values in model cols AND no integer % weight in pre-model cols
+            score_row = None
+            for idx, row in enumerate(rows[1:], 1):
+                if idx <= last_param_row_idx:
+                    continue  # skip all rows before/at last param row
+                if not any(row):
+                    continue
+                # Skip rows where pre-model cols contain % weights (group subtotal rows)
+                pre_vals = [row[i] for i in range(MODEL_START_COL) if i < len(row)]
+                has_pct = any(isinstance(v, str) and '%' in str(v) for v in pre_vals)
+                if has_pct:
+                    continue
+                # Skip tier assignment rows (contain text like 'Tier1', 'Tier2')
+                model_vals = [row[MODEL_START_COL + i] for i in range(min(model_count, len(row) - MODEL_START_COL))
+                              if MODEL_START_COL + i < len(row)]
+                has_tier_text = any(isinstance(v, str) and 'tier' in str(v).lower() for v in model_vals)
+                if has_tier_text:
+                    continue
+                # Count decimal values in model cols
+                decimal_vals = []
                 for i in range(model_count):
                     actual_col = MODEL_START_COL + i
                     if actual_col >= len(row):
@@ -134,15 +169,13 @@ def _load_matrix_format(wb, results):
                     v = row[actual_col]
                     try:
                         fv = float(v)
-                        if 1.0 < fv < 3.0 and fv != int(fv):
-                            decimal_count += 1
+                        if 1.0 <= fv <= 3.0 and fv != int(fv):
+                            decimal_vals.append(fv)
                     except (TypeError, ValueError):
                         pass
-                if decimal_count > best_count:
-                    best_count = decimal_count
-                    best_row = row
-
-            score_row = best_row if best_count >= max(1, model_count * 0.3) else None
+                if len(decimal_vals) >= max(2, model_count * 0.3):
+                    score_row = row
+                    break  # take the first qualifying row after param rows
 
             # Log which strategy found the score row
             if score_row is not None:
@@ -166,7 +199,7 @@ def _load_matrix_format(wb, results):
                         continue
                 db.commit()
 
-            # Update weights from parameter rows
+            # Pass: read parameter rows — update weights AND save individual scores into model_scores
             current_group = None
             for row in rows[1:]:
                 grp = str(row[0]).strip() if row[0] else None
@@ -174,14 +207,40 @@ def _load_matrix_format(wb, results):
                 weight = row[4]
                 if grp:
                     current_group = grp
-                if not sub or weight is None:
+                if not sub:
                     continue
-                try:
-                    w = float(weight)
-                    if sub in param_map:
-                        db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, param_map[sub]))
-                except (ValueError, TypeError):
-                    pass
+
+                # Update parameter weight
+                if weight is not None:
+                    try:
+                        w = float(weight)
+                        if sub in param_map:
+                            db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, param_map[sub]))
+                    except (ValueError, TypeError):
+                        pass
+
+                # Save individual model scores (integer 1/2/3) into model_scores
+                if sub not in param_map:
+                    continue
+                param_id = param_map[sub]
+                for col_idx, model_name in enumerate(model_names):
+                    if not model_name or model_name not in model_map:
+                        continue
+                    actual_col = MODEL_START_COL + col_idx
+                    if actual_col >= len(row):
+                        continue
+                    cell_val = row[actual_col]
+                    try:
+                        level = int(cell_val)
+                        if level not in (1, 2, 3):
+                            continue
+                        model_id = model_map[model_name]
+                        db.execute(
+                            'INSERT OR REPLACE INTO model_scores (model_id, parameter_id, level) VALUES (?,?,?)',
+                            (model_id, param_id, level)
+                        )
+                    except (TypeError, ValueError):
+                        continue
             db.commit()
 
     # Pre-assigned tiers are already loaded in step 2 from Model_tier sheet
@@ -224,9 +283,12 @@ def _load_standard_format(wb, results):
                 if not grp:
                     continue
                 db.execute(
-                    'INSERT INTO parameters (grp, sub_parameter, criteria, description, weight) VALUES (?,?,?,?,?)',
+                    'INSERT INTO parameters (grp, sub_parameter, criteria, description, weight, level1_label, level2_label, level3_label) VALUES (?,?,?,?,?,?,?,?)',
                     (str(grp), str(d.get('sub_parameter') or ''), str(d.get('criteria') or ''),
-                     str(d.get('description') or ''), float(d.get('weight') or 1.0))
+                     str(d.get('description') or ''), float(d.get('weight') or 1.0),
+                     str(d.get('low') or d.get('level1_label') or 'Low'),
+                     str(d.get('medium') or d.get('level2_label') or 'Medium'),
+                     str(d.get('high') or d.get('level3_label') or 'High'))
                 )
                 results['parameters'] += 1
             db.commit()
