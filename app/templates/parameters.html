@@ -9,7 +9,7 @@
     {% endif %}
 </div>
 
-{# ── Create form (shown when clicking + New Parameter) ── #}
+{# ── Create form ─────────────────────────────────────────────────────── #}
 {% if show_form %}
 <div class="card mb-4" style="max-width:700px;">
     <div class="card-header">Create Parameter</div>
@@ -31,32 +31,32 @@
             </div>
             <div class="form-group">
                 <label>Sub-Parameter Name <span class="text-danger">*</span></label>
-                <input type="text" name="sub_parameter" class="form-control" placeholder="e.g. Revenue Impact" required>
+                <input type="text" name="sub_parameter" class="form-control" required>
             </div>
             <div class="form-group">
                 <label>Description</label>
-                <textarea name="description" class="form-control" rows="2" placeholder="What this parameter measures..."></textarea>
+                <textarea name="description" class="form-control" rows="2"></textarea>
             </div>
             <div class="form-group">
                 <label>Criteria</label>
                 <input type="text" name="criteria" class="form-control" placeholder="e.g. 1-3">
             </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.75rem; margin-bottom:1rem;">
-                <div class="form-group" style="margin:0;">
-                    <label style="color:#4caf50; font-size:0.8rem;">🟢 Low (Level 1)</label>
-                    <input type="text" name="level1_label" class="form-control" placeholder="Level 1 description">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem;margin-bottom:1rem;">
+                <div>
+                    <label style="color:#4caf50;font-size:.78rem;">🟢 Low (1)</label>
+                    <input type="text" name="level1_label" class="form-control" placeholder="Level 1 label">
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label style="color:#ff9800; font-size:0.8rem;">🟡 Medium (Level 2)</label>
-                    <input type="text" name="level2_label" class="form-control" placeholder="Level 2 description">
+                <div>
+                    <label style="color:#ff9800;font-size:.78rem;">🟡 Medium (2)</label>
+                    <input type="text" name="level2_label" class="form-control" placeholder="Level 2 label">
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label style="color:#f44336; font-size:0.8rem;">🔴 High (Level 3)</label>
-                    <input type="text" name="level3_label" class="form-control" placeholder="Level 3 description">
+                <div>
+                    <label style="color:#f44336;font-size:.78rem;">🔴 High (3)</label>
+                    <input type="text" name="level3_label" class="form-control" placeholder="Level 3 label">
                 </div>
             </div>
             <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Create Parameter</button>
+                <button type="submit" class="btn btn-primary">Create</button>
                 <a href="{{ url_for('main.parameters_list') }}" class="btn btn-outline">Cancel</a>
             </div>
         </form>
@@ -64,17 +64,17 @@
 </div>
 {% endif %}
 
-{# ── Edit form (shown when clicking Edit on a row) ── #}
+{# ── Edit form ───────────────────────────────────────────────────────── #}
 {% if edit_param %}
-<div class="card mb-4" style="max-width:700px; border:1px solid #2a6496;">
-    <div class="card-header" style="background:#1a3a5a; color:#7eb8e8;">
-        Edit Parameter — <em>{{ edit_param['sub_parameter'] or 'Unnamed' }}</em>
+<div class="card mb-4" style="max-width:700px;border:1px solid #2a6496;">
+    <div class="card-header" style="background:#1a3a5a;color:#7eb8e8;">
+        Edit — <em>{{ edit_param['sub_parameter'] or 'Unnamed' }}</em>
     </div>
     <div class="card-body">
         <form method="POST" action="{{ url_for('main.parameter_edit', param_id=edit_param['id']) }}">
             <div class="form-row">
                 <div class="form-group">
-                    <label>Group <span class="text-danger">*</span></label>
+                    <label>Group</label>
                     <select name="group" class="form-control" required>
                         <option value="Materiality" {% if edit_param['grp']=='Materiality' %}selected{% endif %}>Materiality</option>
                         <option value="Criticality" {% if edit_param['grp']=='Criticality' %}selected{% endif %}>Criticality</option>
@@ -82,7 +82,7 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Weight (e.g. 0.35)</label>
+                    <label>Weight</label>
                     <input type="number" name="weight" class="form-control"
                            value="{{ edit_param['weight'] }}" step="0.05" min="0" max="1">
                 </div>
@@ -101,25 +101,25 @@
                 <input type="text" name="criteria" class="form-control"
                        value="{{ edit_param['criteria'] or '' }}">
             </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.75rem; margin-bottom:1rem;">
-                <div class="form-group" style="margin:0;">
-                    <label style="color:#4caf50; font-size:0.8rem;">🟢 Low (Level 1)</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem;margin-bottom:1rem;">
+                <div>
+                    <label style="color:#4caf50;font-size:.78rem;">🟢 Low (1)</label>
                     <input type="text" name="level1_label" class="form-control"
                            value="{{ edit_param['level1_label'] or '' }}">
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label style="color:#ff9800; font-size:0.8rem;">🟡 Medium (Level 2)</label>
+                <div>
+                    <label style="color:#ff9800;font-size:.78rem;">🟡 Medium (2)</label>
                     <input type="text" name="level2_label" class="form-control"
                            value="{{ edit_param['level2_label'] or '' }}">
                 </div>
-                <div class="form-group" style="margin:0;">
-                    <label style="color:#f44336; font-size:0.8rem;">🔴 High (Level 3)</label>
+                <div>
+                    <label style="color:#f44336;font-size:.78rem;">🔴 High (3)</label>
                     <input type="text" name="level3_label" class="form-control"
                            value="{{ edit_param['level3_label'] or '' }}">
                 </div>
             </div>
             <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Save Changes</button>
+                <button type="submit" class="btn btn-primary">Save</button>
                 <a href="{{ url_for('main.parameters_list') }}" class="btn btn-outline">Cancel</a>
             </div>
         </form>
@@ -127,70 +127,87 @@
 </div>
 {% endif %}
 
-{# ── Parameter table ── #}
+{# ── Parameter table ─────────────────────────────────────────────────── #}
 {% if groups %}
 <div class="card">
     <div class="card-body p-0">
-        <table class="table" style="table-layout:fixed; width:100%;">
+        <table class="table" style="table-layout:fixed;width:100%;font-size:0.85rem;">
             <colgroup>
-                <col style="width:16%;">
+                {# Sub-param + description inline #}
                 <col style="width:22%;">
+                {# Low / Medium / High — compact #}
+                <col style="width:24%;">
+                <col style="width:24%;">
                 <col style="width:22%;">
-                <col style="width:22%;">
-                <col style="width:7%;">
-                {% if has_role('Admin','Developer') %}<col style="width:11%;">{% endif %}
+                <col style="width:5%;">
+                {% if has_role('Admin','Developer') %}<col style="width:3%;">{% endif %}
             </colgroup>
             <thead>
                 <tr>
-                    <th>Sub-Parameter</th>
-                    <th style="border-left:3px solid #4caf50;">🟢 Low (1)</th>
-                    <th style="border-left:3px solid #ff9800;">🟡 Medium (2)</th>
-                    <th style="border-left:3px solid #f44336;">🔴 High (3)</th>
-                    <th>Weight</th>
+                    <th>SUB-PARAMETER</th>
+                    <th style="border-left:3px solid #4caf50;padding-left:8px;">
+                        <span style="color:#4caf50;">●</span> LOW (1)
+                    </th>
+                    <th style="border-left:3px solid #ff9800;padding-left:8px;">
+                        <span style="color:#ff9800;">●</span> MEDIUM (2)
+                    </th>
+                    <th style="border-left:3px solid #f44336;padding-left:8px;">
+                        <span style="color:#f44336;">●</span> HIGH (3)
+                    </th>
+                    <th>WEIGHT</th>
                     {% if has_role('Admin','Developer') %}<th></th>{% endif %}
                 </tr>
             </thead>
             <tbody>
                 {% for group_name, group_params in groups.items() %}
-                {# Group header row #}
+                {# Group header #}
                 <tr>
                     <td colspan="{% if has_role('Admin','Developer') %}6{% else %}5{% endif %}"
-                        style="background:#1a2a3a; color:#7eb8e8; font-weight:600;
-                               font-size:0.85rem; letter-spacing:0.05em;
-                               padding:0.5rem 1rem; border-top:2px solid #2a3f55;">
+                        style="background:#1a2a3a;color:#7eb8e8;font-weight:700;
+                               font-size:0.82rem;letter-spacing:.06em;text-transform:uppercase;
+                               padding:.45rem 1rem;border-top:2px solid #2a3f55;">
                         {{ group_name }}
                     </td>
                 </tr>
                 {% for p in group_params %}
                 <tr {% if edit_param and edit_param['id']==p['id'] %}style="background:#0f2035;"{% endif %}>
-                    <td style="word-wrap:break-word; font-weight:500;">
-                        {{ p['sub_parameter'] or '-' }}
-                        <div style="font-size:0.75rem; color:#7eb8e8; margin-top:2px;">
-                            {{ p['description'] or '' }}
-                        </div>
+                    {# Sub-parameter name + description on same line #}
+                    <td style="word-wrap:break-word;vertical-align:top;padding:.55rem .75rem;">
+                        <span style="font-weight:600;">{{ p['sub_parameter'] or '-' }}</span>
+                        {% if p['description'] %}
+                        <span style="color:#7eb8e8;font-size:0.78rem;margin-left:4px;">
+                            — {{ p['description'] }}
+                        </span>
+                        {% endif %}
                     </td>
-                    <td style="border-left:3px solid #4caf50; word-wrap:break-word; font-size:0.85rem;">
+                    <td style="border-left:3px solid #4caf50;padding:.55rem .6rem;
+                               word-wrap:break-word;vertical-align:top;color:#b8ddb8;">
                         {{ p['level1_label'] or '-' }}
                     </td>
-                    <td style="border-left:3px solid #ff9800; word-wrap:break-word; font-size:0.85rem;">
+                    <td style="border-left:3px solid #ff9800;padding:.55rem .6rem;
+                               word-wrap:break-word;vertical-align:top;color:#ffe0a0;">
                         {{ p['level2_label'] or '-' }}
                     </td>
-                    <td style="border-left:3px solid #f44336; word-wrap:break-word; font-size:0.85rem;">
+                    <td style="border-left:3px solid #f44336;padding:.55rem .6rem;
+                               word-wrap:break-word;vertical-align:top;color:#ffb0a8;">
                         {{ p['level3_label'] or '-' }}
                     </td>
-                    <td>{{ p['weight'] }}</td>
+                    <td style="vertical-align:top;padding:.55rem .5rem;
+                               color:#7eb8e8;font-weight:600;">
+                        {{ p['weight'] }}
+                    </td>
                     {% if has_role('Admin','Developer') %}
-                    <td>
-                        <div style="display:flex; gap:4px;">
+                    <td style="vertical-align:top;padding:.4rem .3rem;">
+                        <div style="display:flex;flex-direction:column;gap:3px;">
                             <a href="{{ url_for('main.parameter_edit', param_id=p['id']) }}"
                                class="btn btn-sm btn-outline"
-                               style="padding:2px 8px; font-size:0.75rem;">Edit</a>
+                               style="padding:2px 6px;font-size:.72rem;">Edit</a>
                             {% if has_role('Admin') %}
                             <form method="POST"
                                   action="{{ url_for('main.parameter_delete', param_id=p['id']) }}"
-                                  onsubmit="return confirm('Delete this parameter? All model scores for it will also be removed.')">
+                                  onsubmit="return confirm('Delete this parameter?')">
                                 <button type="submit" class="btn btn-sm btn-danger"
-                                        style="padding:2px 8px; font-size:0.75rem;">Del</button>
+                                        style="padding:2px 6px;font-size:.72rem;width:100%;">Del</button>
                             </form>
                             {% endif %}
                         </div>
