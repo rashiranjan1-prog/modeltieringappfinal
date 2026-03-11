@@ -62,7 +62,10 @@ CREATE TABLE IF NOT EXISTS parameters (
     sub_parameter TEXT,
     criteria TEXT,
     description TEXT,
-    weight REAL DEFAULT 1.0
+    weight REAL DEFAULT 1.0,
+    level1_label TEXT DEFAULT 'Low',
+    level2_label TEXT DEFAULT 'Medium',
+    level3_label TEXT DEFAULT 'High'
 );
 
 CREATE TABLE IF NOT EXISTS model_scores (
@@ -112,4 +115,13 @@ def create_tables(db):
         stmt = stmt.strip()
         if stmt:
             db.execute(stmt)
+    db.commit()
+
+
+def migrate(db):
+    """Add new columns to existing databases without losing data."""
+    existing = [row[1] for row in db.execute("PRAGMA table_info(parameters)").fetchall()]
+    for col, default in [('level1_label', 'Low'), ('level2_label', 'Medium'), ('level3_label', 'High')]:
+        if col not in existing:
+            db.execute(f"ALTER TABLE parameters ADD COLUMN {col} TEXT DEFAULT '{default}'")
     db.commit()
