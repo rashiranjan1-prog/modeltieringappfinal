@@ -62,10 +62,7 @@ CREATE TABLE IF NOT EXISTS parameters (
     sub_parameter TEXT,
     criteria TEXT,
     description TEXT,
-    weight REAL DEFAULT 1.0,
-    level1_label TEXT DEFAULT 'Low',
-    level2_label TEXT DEFAULT 'Medium',
-    level3_label TEXT DEFAULT 'High'
+    weight REAL DEFAULT 1.0
 );
 
 CREATE TABLE IF NOT EXISTS model_scores (
@@ -119,9 +116,23 @@ def create_tables(db):
 
 
 def migrate(db):
-    """Add new columns to existing databases without losing data."""
+    """Add new columns and seed correct defaults — safe to run on every startup."""
+    # Add level label columns if missing
     existing = [row[1] for row in db.execute("PRAGMA table_info(parameters)").fetchall()]
-    for col, default in [('level1_label', 'Low'), ('level2_label', 'Medium'), ('level3_label', 'High')]:
+    for col in ('level1_label', 'level2_label', 'level3_label'):
         if col not in existing:
-            db.execute(f"ALTER TABLE parameters ADD COLUMN {col} TEXT DEFAULT '{default}'")
+            db.execute(f"ALTER TABLE parameters ADD COLUMN {col} TEXT DEFAULT ''")
+
+    # Seed correct group weights (0.40/0.40/0.20) only if not already in DB
+    # This fixes fresh installs that had wrong old defaults baked in
+    defaults = [
+        ('materiality_weight', '0.4'),
+        ('criticality_weight', '0.4'),
+        ('complexity_weight',  '0.2'),
+    ]
+    for key, val in defaults:
+        exists = db.execute('SELECT 1 FROM config_kv WHERE key=?', (key,)).fetchone()
+        if not exists:
+            db.execute('INSERT INTO config_kv (key, value) VALUES (?,?)', (key, val))
+
     db.commit()
