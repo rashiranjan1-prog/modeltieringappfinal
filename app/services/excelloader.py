@@ -444,3 +444,43 @@ def _load_standard_format(wb, results):
                 )
                 results['scores'] += 1
             db.commit()
+
+
+def _debug_matrix(filepath):
+    """Return a short diagnostic string about what the loader can see in the file."""
+    wb = load_workbook(filepath, data_only=True)
+    sheet_names = wb.sheetnames
+
+    ws = None
+    for sname in sheet_names:
+        if sname.lower() in ('tiering_method', 'tiering method'):
+            ws = wb[sname]
+            break
+    if ws is None:
+        return f"No Tiering_Method sheet found. Sheets: {sheet_names}"
+
+    rows = list(ws.iter_rows(values_only=True))
+    col_a_vals = []
+    internal_found = False
+    tier_found = False
+    for idx, row in enumerate(rows):
+        if not any(row):
+            continue
+        v = str(row[0] or '').strip()
+        if v:
+            col_a_vals.append(f"row{idx+1}='{v}'")
+        if v.lower() == 'internal':
+            internal_found = True
+        if v.lower() == 'tier' and (len(row) < 2 or not row[1]):
+            tier_found = True
+
+    # Count model cols in header
+    header = rows[0] if rows else []
+    non_empty_header = sum(1 for v in header if v)
+
+    return (f"Sheets={sheet_names} | "
+            f"Rows={len(rows)} | "
+            f"Header non-empty cols={non_empty_header} | "
+            f"Internal row found={internal_found} | "
+            f"Tier table found={tier_found} | "
+            f"Col-A values: {col_a_vals}")
