@@ -79,7 +79,7 @@ def model_detail(model_id):
     model = db.execute('SELECT * FROM models WHERE id=?', (model_id,)).fetchone()
     if not model:
         abort(404)
-    parameters = db.execute("SELECT * FROM parameters ORDER BY CASE grp WHEN 'Materiality' THEN 1 WHEN 'Criticality' THEN 2 WHEN 'Complexity' THEN 3 ELSE 4 END").fetchall()
+    parameters = db.execute('SELECT * FROM parameters ORDER BY grp').fetchall()
     scores_rows = db.execute('SELECT * FROM model_scores WHERE model_id=?', (model_id,)).fetchall()
     scores_map = {s['parameter_id']: s for s in scores_rows}
     overrides = db.execute(
@@ -115,21 +115,8 @@ def model_save_scores(model_id):
     if not model:
         abort(404)
     parameters = db.execute('SELECT * FROM parameters').fetchall()
-    param_ids = {p['id'] for p in parameters}
-
-    # Remove stale score rows for parameters that no longer exist
-    db.execute(
-        'DELETE FROM model_scores WHERE model_id=? AND parameter_id NOT IN (SELECT id FROM parameters)',
-        (model_id,)
-    )
-
     for p in parameters:
-        raw_val = request.form.get(f'level_{p["id"]}')
-        if raw_val is None:
-            # Parameter exists but wasn't in form (newly added param) — default to 1
-            level = 1
-        else:
-            level = max(1, min(3, int(raw_val)))
+        level = max(1, min(3, int(request.form.get(f'level_{p["id"]}', 1))))
         existing = db.execute('SELECT id FROM model_scores WHERE model_id=? AND parameter_id=?',
                               (model_id, p['id'])).fetchone()
         if existing:
@@ -138,7 +125,6 @@ def model_save_scores(model_id):
         else:
             db.execute('INSERT INTO model_scores (model_id, parameter_id, level) VALUES (?,?,?)',
                        (model_id, p['id'], level))
-
     db.commit()
     compute_tiering_for_model(model_id)
     flash('Scores saved and tiering computed.', 'success')
@@ -173,7 +159,7 @@ def model_override(model_id):
 @login_required
 def parameters_list():
     db = get_db()
-    params = db.execute("SELECT * FROM parameters ORDER BY CASE grp WHEN 'Materiality' THEN 1 WHEN 'Criticality' THEN 2 WHEN 'Complexity' THEN 3 ELSE 4 END, sub_parameter").fetchall()
+    params = db.execute('SELECT * FROM parameters ORDER BY grp, sub_parameter').fetchall()
     groups = {}
     for p in params:
         grp = p['grp']
@@ -190,21 +176,18 @@ def parameter_new():
     if request.method == 'POST':
         db = get_db()
         db.execute(
-            'INSERT INTO parameters (grp, sub_parameter, criteria, description, weight, level1_label, level2_label, level3_label) VALUES (?,?,?,?,?,?,?,?)',
+            'INSERT INTO parameters (grp, sub_parameter, criteria, description, weight) VALUES (?,?,?,?,?)',
             (request.form.get('group', '').strip(),
              request.form.get('sub_parameter', '').strip(),
              request.form.get('criteria', '').strip(),
              request.form.get('description', '').strip(),
-             float(request.form.get('weight', 1.0)),
-             request.form.get('level1_label', 'Low').strip(),
-             request.form.get('level2_label', 'Medium').strip(),
-             request.form.get('level3_label', 'High').strip())
+             float(request.form.get('weight', 1.0)))
         )
         db.commit()
         flash('Parameter created.', 'success')
         return redirect(url_for('main.parameters_list'))
     db = get_db()
-    params = db.execute("SELECT * FROM parameters ORDER BY CASE grp WHEN 'Materiality' THEN 1 WHEN 'Criticality' THEN 2 WHEN 'Complexity' THEN 3 ELSE 4 END, sub_parameter").fetchall()
+    params = db.execute('SELECT * FROM parameters ORDER BY grp, sub_parameter').fetchall()
     groups = {}
     for p in params:
         g = p['grp']
@@ -221,41 +204,6 @@ def parameter_delete(param_id):
     db.commit()
     flash('Parameter deleted.', 'success')
     return redirect(url_for('main.parameters_list'))
-
-
-@main_bp.route('/parameters/<int:param_id>/edit', methods=['GET', 'POST'])
-@login_required
-@roles_required('Admin', 'Developer')
-def parameter_edit(param_id):
-    db = get_db()
-    param = db.execute('SELECT * FROM parameters WHERE id=?', (param_id,)).fetchone()
-    if not param:
-        abort(404)
-    if request.method == 'POST':
-        db.execute(
-            'UPDATE parameters SET grp=?, sub_parameter=?, criteria=?, description=?, weight=?, level1_label=?, level2_label=?, level3_label=? WHERE id=?',
-            (request.form.get('group', '').strip(),
-             request.form.get('sub_parameter', '').strip(),
-             request.form.get('criteria', '').strip(),
-             request.form.get('description', '').strip(),
-             float(request.form.get('weight', 1.0)),
-             request.form.get('level1_label', 'Low').strip(),
-             request.form.get('level2_label', 'Medium').strip(),
-             request.form.get('level3_label', 'High').strip(),
-             param_id)
-        )
-        db.commit()
-        # Recompute all models since parameter weights/groups may have changed
-        compute_tiering_for_all()
-        flash('Parameter updated and scores recomputed.', 'success')
-        return redirect(url_for('main.parameters_list'))
-    params = db.execute("SELECT * FROM parameters ORDER BY CASE grp WHEN 'Materiality' THEN 1 WHEN 'Criticality' THEN 2 WHEN 'Complexity' THEN 3 ELSE 4 END, sub_parameter").fetchall()
-    groups = {}
-    for p in params:
-        groups.setdefault(p['grp'], []).append(p)
-    return render_template('parameters.html', parameters=params, groups=groups,
-                           edit_param=param, has_role=has_role)
-
 
 
 # ─── Tiering ────────────────────────────────────────────────────────────────
