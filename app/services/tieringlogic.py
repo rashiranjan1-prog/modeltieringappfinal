@@ -1,4 +1,16 @@
-"""Tiering computation logic using raw sqlite3."""
+"""Tiering computation logic using raw sqlite3.
+
+Score formula matches the Excel sheet exactly:
+  Internal Score = SUMPRODUCT(param_weights, param_levels) * group_weight
+                   summed across all three groups (Materiality, Criticality, Complexity)
+
+  i.e. for each group:
+       group_contribution = sum(param_weight_i * level_i) * group_weight
+
+  Final score = Materiality_contribution + Criticality_contribution + Complexity_contribution
+
+  This produces a score in the range 1.0 – 3.0 (matching the Excel output).
+"""
 from datetime import datetime
 from ..db import get_db
 
@@ -14,9 +26,10 @@ def compute_tiering_for_model(model_id):
     if not model:
         return None
 
-    mat_w = get_config(db, 'materiality_weight', 0.4)
-    crit_w = get_config(db, 'criticality_weight', 0.35)
-    comp_w = get_config(db, 'complexity_weight', 0.25)
+    # Group-level weights (e.g. Materiality=40%, Criticality=40%, Complexity=20%)
+    mat_w  = get_config(db, 'materiality_weight',  0.40)
+    crit_w = get_config(db, 'criticality_weight',  0.40)
+    comp_w = get_config(db, 'complexity_weight',   0.20)
 
     scores = db.execute(
         'SELECT ms.*, p.grp, p.weight FROM model_scores ms '
@@ -26,7 +39,6 @@ def compute_tiering_for_model(model_id):
 
     # If no parameter scores entered, check if Excel already loaded a direct computed_score
     if not scores:
-        # If computed_score was already set directly from Excel score row, just assign tier
         existing_score = model['computed_score']
         if existing_score and existing_score > 0:
             tiers = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
@@ -52,24 +64,59 @@ def compute_tiering_for_model(model_id):
         db.commit()
         return db.execute('SELECT * FROM models WHERE id=?', (model_id,)).fetchone()
 
-    group_raw = {'Materiality': 0.0, 'Criticality': 0.0, 'Complexity': 0.0}
-    group_max = {'Materiality': 0.0, 'Criticality': 0.0, 'Complexity': 0.0}
+    # Delete orphaned score rows for parameters that no longer exist
+    db.execute(
+        'DELETE FROM model_scores WHERE model_id=? AND parameter_id NOT IN (SELECT id FROM parameters)',
+        (model_id,)
+    )
+
+    # --- Excel SUMPRODUCT formula replication ---
+    # For each group: group_score = sum(param_weight_i * level_i)
+    # These param weights are already fractions (e.g. 0.35, 0.35, 0.20, 0.10)
+    # that sum to 1.0 within a group, so group_score is already on the 1–3 scale.
+    # Final = group_score_mat * mat_w + group_score_crit * crit_w + group_score_comp * comp_w
+
+    group_weighted_sum  = {'Materiality': 0.0, 'Criticality': 0.0, 'Complexity': 0.0}
+    group_weight_totals = {'Materiality': 0.0, 'Criticality': 0.0, 'Complexity': 0.0}
 
     for s in scores:
         grp = s['grp']
-        if grp in group_raw:
-            ws = s['weight'] * s['level']
-            group_raw[grp] += ws
-            group_max[grp] += s['weight'] * 3
-            db.execute('UPDATE model_scores SET weighted_score=? WHERE id=?', (ws, s['id']))
+        if grp not in group_weighted_sum:
+            continue
+        param_w = s['weight']   # individual parameter weight within its group (e.g. 0.35)
+        level   = s['level']    # 1, 2, or 3
+        ws = param_w * level
+        group_weighted_sum[grp]  += ws
+        group_weight_totals[grp] += param_w
+        db.execute('UPDATE model_scores SET weighted_score=? WHERE id=?', (ws, s['id']))
 
-    def normalize(raw, mx):
-        # Scale to 1–3: level 1 = 1.0, level 2 = 2.0, level 3 = 3.0
-        return (raw / mx) * 3 if mx > 0 else 1.0
+    db.commit()
 
-    final = (normalize(group_raw['Materiality'], group_max['Materiality']) * mat_w +
-             normalize(group_raw['Criticality'], group_max['Criticality']) * crit_w +
-             normalize(group_raw['Complexity'], group_max['Complexity']) * comp_w)
+    def group_score(grp):
+        """
+        Returns the weighted average score for the group, normalised to the
+        1–3 scale even if parameter weights don't sum to exactly 1.0.
+        """
+        total_w = group_weight_totals[grp]
+        if total_w <= 0:
+            return 1.0
+        raw = group_weighted_sum[grp]
+        # If weights already sum to 1 this is just raw.
+        # If not (e.g. only some params filled), normalise so the result
+        # stays on the 1–3 scale.
+        return raw / total_w
+
+    # Normalise group-level weights so they always sum to 1.0
+    total_gw = mat_w + crit_w + comp_w
+    if total_gw <= 0:
+        total_gw = 1.0
+    mat_w  /= total_gw
+    crit_w /= total_gw
+    comp_w /= total_gw
+
+    final = (group_score('Materiality')  * mat_w +
+             group_score('Criticality')  * crit_w +
+             group_score('Complexity')   * comp_w)
 
     tiers = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
     matched = None
@@ -80,9 +127,7 @@ def compute_tiering_for_model(model_id):
     if matched is None and tiers:
         matched = tiers[-1]['name'] if final > tiers[-1]['upper_bound'] else tiers[0]['name']
 
-    # Preserve current_tier only if it was deliberately overridden
-    # (i.e. it differs from the previously computed tier, meaning a user changed it manually).
-    # Otherwise always sync current_tier to the new computed value.
+    # Preserve current_tier only if it was deliberately overridden by a user
     was_overridden = (
         model['current_tier'] and
         model['computed_tier'] and
