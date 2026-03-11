@@ -227,7 +227,10 @@ def _load_matrix_format(wb, filepath, results):
         grp_val = str(row[GRP_COL - 1] or '').strip() if len(row) >= GRP_COL else ''
         sub_val = str(row[SUB_COL - 1] or '').strip() if len(row) >= SUB_COL else ''
 
-        if grp_val.lower() in ('internal', 'internal score', 'internal_score') or grp_val.lower().startswith('internal'):
+        # Detect Internal score row:
+        # Try text label first (col A-D), then fall back to float-value detection below
+        any_col_vals = [str(row[c] or '').strip().lower() for c in range(min(4, len(row)))]
+        if any(v in ('internal', 'internal score') or v.startswith('internal') for v in any_col_vals if v):
             internal_score_row = idx
             continue
         if grp_val.lower() == 'tier' and sub_val.lower() in ('', 'lower range', 'lower_range'):
@@ -250,6 +253,29 @@ def _load_matrix_format(wb, filepath, results):
             # Record score row if this param exists in param_map (exact or fuzzy)
             if sub_val in param_map or nk in param_map_norm:
                 param_score_rows[nk] = idx
+
+    # --- Fallback: find Internal score row by float values in model columns ---
+    # Handles case where 'Internal' is a floating textbox (not a real cell value)
+    if internal_score_row is None and model_cols:
+        # Look for a row after row 18 where model columns contain float scores (not 1/2/3)
+        # Param rows only have integers 1, 2, 3. Score row has floats like 1.86.
+        last_known_param_idx = max(
+            (idx for idx, row in enumerate(rows)
+             if not any(row) is False
+             and any(row[c-1] if c-1 < len(row) else None
+                     for c in [r for _, r in [(0, param_score_rows[k]) for k in param_score_rows]])
+             ), default=18
+        ) if param_score_rows else 18
+        # Simpler: scan rows 19 onwards for float values
+        for idx in range(18, min(30, len(rows))):
+            row = rows[idx]
+            model_vals = [row[col_idx-1] for col_idx, _ in model_cols[:5]
+                          if col_idx-1 < len(row) and row[col_idx-1] is not None]
+            float_vals = [v for v in model_vals
+                          if isinstance(v, float) and not v.is_integer() and 1.0 <= v <= 3.0]
+            if len(float_vals) >= 3:  # at least 3 float scores = it's the Internal row
+                internal_score_row = idx
+                break
 
     # Save group weights to config_kv
     group_cfg = {'Materiality': 'materiality_weight',
@@ -469,9 +495,12 @@ def _debug_matrix(filepath):
         v = str(row[0] or '').strip()
         if v:
             col_a_vals.append(f"row{idx+1}='{v}'")
-        if v.lower() == 'internal':
+        # Check any col in first 4 for 'internal'
+        any_cols = [str(row[c] or '').strip().lower() for c in range(min(4, len(row)))]
+        if any(c in ('internal', 'internal score') or c.startswith('internal') for c in any_cols if c):
             internal_found = True
-        if v.lower() == 'tier' and (len(row) < 2 or not row[1]):
+        sub = str(row[1] or '').strip().lower() if len(row) > 1 else ''
+        if v.lower() == 'tier' and sub in ('', 'lower range', 'lower_range'):
             tier_found = True
 
     # Count model cols in header
