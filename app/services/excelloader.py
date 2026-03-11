@@ -227,10 +227,10 @@ def _load_matrix_format(wb, filepath, results):
         grp_val = str(row[GRP_COL - 1] or '').strip() if len(row) >= GRP_COL else ''
         sub_val = str(row[SUB_COL - 1] or '').strip() if len(row) >= SUB_COL else ''
 
-        if grp_val.lower() == 'internal':
+        if grp_val.lower() in ('internal', 'internal score', 'internal_score') or grp_val.lower().startswith('internal'):
             internal_score_row = idx
             continue
-        if grp_val.lower() == 'tier' and not sub_val:
+        if grp_val.lower() == 'tier' and sub_val.lower() in ('', 'lower range', 'lower_range'):
             tier_table_start = idx
             continue
         if grp_val.lower() in SKIP_KEYWORDS:
@@ -322,7 +322,7 @@ def _load_matrix_format(wb, filepath, results):
             if not any(row):
                 continue
             tier_name = str(row[0]).strip() if row[0] else None
-            if not tier_name or tier_name.lower() in ('none', '', 'lower range', 'lower_range'):
+            if not tier_name or tier_name.lower() in ('none', '', 'lower range', 'lower_range', 'tier'):
                 continue
             try:
                 lo = float(row[1]) if len(row) > 1 and row[1] is not None else 0.0
