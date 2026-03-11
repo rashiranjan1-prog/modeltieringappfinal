@@ -5,8 +5,11 @@ Format A (standard):  Sheets named Models, Parameters, Tiers, Settings, Scores
 Format B (matrix):    Sheets named Tiering_Method, Parameters, Model_tier, Models_List
                       (the wide pivot format where models are columns and scores are cells)
 
-Hidden columns (e.g. duplicate Weight col F, spacer col G) are automatically
-detected and skipped — the website never sees them.
+Improvements:
+- Fuzzy model name matching (strips whitespace, case-insensitive)
+- Param name matching is also normalised
+- Param weights from Tiering_Method ALWAYS override the default
+- Robust Internal / Tier row detection
 """
 from openpyxl import load_workbook
 from ..db import get_db
@@ -26,14 +29,12 @@ def _headers(row):
 
 
 def _parse_weight(val):
-    """Parse weight: handles 0.35, '35%', 35 (percent int) -> float 0.0-1.0"""
+    """Parse weight: handles 0.35, '35%', 35 → float 0.0–1.0"""
     if val is None:
         return None
     try:
         f = float(val)
-        if f > 1.0:
-            f = f / 100.0
-        return f
+        return f / 100.0 if f > 1.0 else f
     except (ValueError, TypeError):
         s = str(val).strip().replace('%', '')
         try:
@@ -42,15 +43,20 @@ def _parse_weight(val):
             return None
 
 
+def _norm(s):
+    """Normalise a string for fuzzy matching."""
+    return str(s or '').strip().lower()
+
+
 def load_excel(filepath):
     wb = load_workbook(filepath, data_only=True)
     results = {'models': 0, 'parameters': 0, 'tiers': 0, 'settings': 0,
                'scores': 0, 'computed': 0}
 
     sheet_names_lower = [s.lower() for s in wb.sheetnames]
-    is_matrix_format = 'tiering_method' in sheet_names_lower or 'model_tier' in sheet_names_lower
+    is_matrix = 'tiering_method' in sheet_names_lower or 'model_tier' in sheet_names_lower
 
-    if is_matrix_format:
+    if is_matrix:
         _load_matrix_format(wb, filepath, results)
     else:
         _load_standard_format(wb, results)
@@ -60,20 +66,17 @@ def load_excel(filepath):
 
 
 def _get_hidden_col_indices(filepath, sheet_name):
-    """Load workbook with formulas to read hidden column dimension info."""
     hidden = set()
     try:
         wb2 = load_workbook(filepath, data_only=False)
-        ws = None
         for sname in wb2.sheetnames:
             if sname.lower() == sheet_name.lower():
                 ws = wb2[sname]
+                from openpyxl.utils import column_index_from_string
+                for col_letter, dim in ws.column_dimensions.items():
+                    if dim.hidden:
+                        hidden.add(column_index_from_string(col_letter))
                 break
-        if ws:
-            from openpyxl.utils import column_index_from_string
-            for col_letter, dim in ws.column_dimensions.items():
-                if dim.hidden:
-                    hidden.add(column_index_from_string(col_letter))
     except Exception:
         pass
     return hidden
@@ -82,20 +85,22 @@ def _get_hidden_col_indices(filepath, sheet_name):
 def _load_matrix_format(wb, filepath, results):
     db = get_db()
 
-    # Wipe for clean reimport
+    # Full wipe for clean reimport
     db.execute('DELETE FROM model_scores')
     db.execute('DELETE FROM overrides')
     db.execute('DELETE FROM models')
     db.execute('DELETE FROM parameters')
-    db.execute("DELETE FROM sqlite_sequence WHERE name IN ('models','parameters','model_scores','overrides')")
+    db.execute("DELETE FROM sqlite_sequence WHERE name IN "
+               "('models','parameters','model_scores','overrides')")
     db.commit()
 
-    # Detect hidden columns in Tiering_Method
     hidden_cols = _get_hidden_col_indices(filepath, 'Tiering_Method')
 
-    # 1. Parameters sheet
+    # ── 1. Parameters sheet ──────────────────────────────────────────────────
+    param_map      = {}   # exact sub_parameter name → param_id
+    param_map_norm = {}   # normalised name → param_id  (for fuzzy matching)
+
     ws_params = _sheet(wb, 'Parameters')
-    param_map = {}
     if ws_params:
         rows = list(ws_params.iter_rows(values_only=True))
         current_group = None
@@ -104,14 +109,13 @@ def _load_matrix_format(wb, filepath, results):
                 continue
             grp_val = str(row[0]).strip() if row[0] else None
             sub     = str(row[1]).strip() if len(row) > 1 and row[1] else None
-            desc    = str(row[2]).strip() if len(row) > 2 and row[2] else None
-            l1      = str(row[3]).strip() if len(row) > 3 and row[3] else None
-            l2      = str(row[4]).strip() if len(row) > 4 and row[4] else None
-            l3      = str(row[5]).strip() if len(row) > 5 and row[5] else None
+            desc    = str(row[2]).strip() if len(row) > 2 and row[2] else ''
+            l1      = str(row[3]).strip() if len(row) > 3 and row[3] else ''
+            l2      = str(row[4]).strip() if len(row) > 4 and row[4] else ''
+            l3      = str(row[5]).strip() if len(row) > 5 and row[5] else ''
 
             if grp_val and grp_val.lower() not in ('none', 'parameter'):
                 current_group = grp_val
-
             if not sub or not current_group:
                 continue
             if sub.lower() in ('none', 'sub-parameter', 'sub_parameter'):
@@ -121,16 +125,20 @@ def _load_matrix_format(wb, filepath, results):
                 'INSERT INTO parameters '
                 '(grp, sub_parameter, criteria, description, weight,'
                 ' level1_label, level2_label, level3_label) VALUES (?,?,?,?,?,?,?,?)',
-                (current_group, sub, '', desc or '', 1.0,
+                (current_group, sub, '', desc, 1.0,
                  l1 or 'Low', l2 or 'Medium', l3 or 'High')
             )
-            param_map[sub] = c.lastrowid
+            pid = c.lastrowid
+            param_map[sub]         = pid
+            param_map_norm[_norm(sub)] = pid
             results['parameters'] += 1
         db.commit()
 
-    # 2. Models from Model_tier sheet
+    # ── 2. Models (Model_tier sheet) ─────────────────────────────────────────
+    model_map      = {}   # exact name → model_id
+    model_map_norm = {}   # normalised name → model_id
+
     ws_models = _sheet(wb, 'Model_tier', 'Model_List', 'Models_List', 'Models')
-    model_map = {}
     if ws_models:
         rows = list(ws_models.iter_rows(values_only=True))
         hdrs = _headers(rows[0])
@@ -143,16 +151,18 @@ def _load_matrix_format(wb, filepath, results):
             name = str(row[name_col]).strip() if len(row) > name_col and row[name_col] else None
             risk = str(row[risk_col]).strip() if len(row) > risk_col and row[risk_col] else ''
             tier = (str(row[tier_col]).strip()
-                    if tier_col and len(row) > tier_col and row[tier_col] else None)
+                    if tier_col is not None and len(row) > tier_col and row[tier_col] else None)
             if not name or name.lower() in ('none', '', 'model name', 'model_name'):
                 continue
             c = db.execute('INSERT INTO models (name, risk_type, current_tier) VALUES (?,?,?)',
                            (name, risk, tier))
-            model_map[name] = c.lastrowid
+            mid = c.lastrowid
+            model_map[name]         = mid
+            model_map_norm[_norm(name)] = mid
             results['models'] += 1
         db.commit()
 
-    # 3. Tiering_Method matrix
+    # ── 3. Tiering_Method matrix ─────────────────────────────────────────────
     ws_matrix = _sheet(wb, 'Tiering_Method', 'Tiering Method')
     if not ws_matrix or not model_map or not param_map:
         return
@@ -164,37 +174,48 @@ def _load_matrix_format(wb, filepath, results):
     header = rows[0]
 
     # Find MODEL_START_COL: first visible col whose header is a known model name
+    def _find_model_id(cell_val):
+        """Return model_id for a header cell, using exact then fuzzy match."""
+        if not cell_val:
+            return None
+        s = str(cell_val).strip()
+        if s in model_map:
+            return model_map[s]
+        ns = _norm(s)
+        return model_map_norm.get(ns)
+
     MODEL_START_COL = None
     for col_idx, cell_val in enumerate(header, 1):
         if col_idx in hidden_cols:
             continue
-        if cell_val and str(cell_val).strip() in model_map:
+        if _find_model_id(cell_val) is not None:
             MODEL_START_COL = col_idx
             break
     if MODEL_START_COL is None:
         for col_idx, cell_val in enumerate(header, 1):
-            if cell_val and str(cell_val).strip() in model_map:
+            if _find_model_id(cell_val) is not None:
                 MODEL_START_COL = col_idx
                 break
     if MODEL_START_COL is None:
         MODEL_START_COL = 8
 
-    # Build list of (col_index, model_name), skipping hidden cols
+    # Build list of (col_index, model_id) for all model columns
     model_cols = []
     for col_idx in range(MODEL_START_COL, len(header) + 1):
         if col_idx in hidden_cols:
             continue
         cell_val = header[col_idx - 1] if col_idx - 1 < len(header) else None
-        if cell_val and str(cell_val).strip() in model_map:
-            model_cols.append((col_idx, str(cell_val).strip()))
+        mid = _find_model_id(cell_val)
+        if mid is not None:
+            model_cols.append((col_idx, mid))
 
-    WEIGHT_COL = 5  # col E
-    SUB_COL    = 2  # col B
-    GRP_COL    = 1  # col A
+    WEIGHT_COL = 5   # col E
+    SUB_COL    = 2   # col B
+    GRP_COL    = 1   # col A
 
     group_weight_rows = {}
-    param_weight_rows = {}
-    param_score_rows  = {}
+    param_weight_rows = {}   # normalised sub_param → weight
+    param_score_rows  = {}   # normalised sub_param → row idx
     internal_score_row = None
     tier_table_start   = None
 
@@ -217,41 +238,51 @@ def _load_matrix_format(wb, filepath, results):
 
         if grp_val in ('Materiality', 'Criticality', 'Complexity'):
             w = _parse_weight(row[WEIGHT_COL - 1] if len(row) >= WEIGHT_COL else None)
-            group_weight_rows[grp_val] = w
+            if w is not None:
+                group_weight_rows[grp_val] = w
             continue
 
-        if sub_val and sub_val.lower() not in ('none', '', 'sub-parameter') and sub_val in param_map:
-            w = _parse_weight(row[WEIGHT_COL - 1] if len(row) >= WEIGHT_COL else None)
-            param_weight_rows[sub_val] = w
-            param_score_rows[sub_val] = idx
+        if sub_val and sub_val.lower() not in ('none', '', 'sub-parameter'):
+            w   = _parse_weight(row[WEIGHT_COL - 1] if len(row) >= WEIGHT_COL else None)
+            nk  = _norm(sub_val)
+            if w is not None:
+                param_weight_rows[nk] = w
+            # Record score row if this param exists in param_map (exact or fuzzy)
+            if sub_val in param_map or nk in param_map_norm:
+                param_score_rows[nk] = idx
 
-    # Update group weights
+    # Save group weights to config_kv
     group_cfg = {'Materiality': 'materiality_weight',
                  'Criticality': 'criticality_weight',
                  'Complexity':  'complexity_weight'}
     for grp, w in group_weight_rows.items():
-        if w is not None:
-            db.execute('INSERT OR REPLACE INTO config_kv (key, value) VALUES (?,?)',
-                       (group_cfg[grp], str(w)))
+        db.execute('INSERT OR REPLACE INTO config_kv (key, value) VALUES (?,?)',
+                   (group_cfg[grp], str(w)))
     db.commit()
 
-    # Update param weights
-    for sub, w in param_weight_rows.items():
-        if w is not None and sub in param_map:
-            db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, param_map[sub]))
+    # Save param weights — use normalised lookup, ALWAYS overwrite
+    for nk, w in param_weight_rows.items():
+        pid = param_map_norm.get(nk)
+        if pid:
+            db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, pid))
     db.commit()
 
-    # Save parameter scores (individual 1/2/3 per model per param)
-    for sub_param, row_idx in param_score_rows.items():
-        row = rows[row_idx]
-        param_id = param_map.get(sub_param)
-        if not param_id:
+    # Save individual scores per model per param
+    def _get_param_id(sub_val):
+        if sub_val in param_map:
+            return param_map[sub_val]
+        return param_map_norm.get(_norm(sub_val))
+
+    for nk, row_idx in param_score_rows.items():
+        row    = rows[row_idx]
+        sub_raw = str(rows[row_idx][SUB_COL - 1] or '').strip()
+        pid    = _get_param_id(sub_raw) or param_map_norm.get(nk)
+        if not pid:
             continue
-        for col_idx, model_name in model_cols:
+        for col_idx, model_id in model_cols:
             arr_idx = col_idx - 1
             val = row[arr_idx] if arr_idx < len(row) else None
-            model_id = model_map.get(model_name)
-            if not model_id or val is None:
+            if val is None:
                 continue
             try:
                 level = max(1, min(3, int(val)))
@@ -259,19 +290,18 @@ def _load_matrix_format(wb, filepath, results):
                 level = 1
             db.execute(
                 'INSERT OR REPLACE INTO model_scores (model_id, parameter_id, level) VALUES (?,?,?)',
-                (model_id, param_id, level)
+                (model_id, pid, level)
             )
             results['scores'] += 1
     db.commit()
 
-    # Save computed scores from Internal row
+    # Save computed scores from Internal row (row 22)
     if internal_score_row is not None:
         row = rows[internal_score_row]
-        for col_idx, model_name in model_cols:
+        for col_idx, model_id in model_cols:
             arr_idx = col_idx - 1
             val = row[arr_idx] if arr_idx < len(row) else None
-            model_id = model_map.get(model_name)
-            if not model_id or val is None:
+            if val is None:
                 continue
             try:
                 db.execute(
@@ -283,20 +313,20 @@ def _load_matrix_format(wb, filepath, results):
         db.commit()
         results['score_row_found'] = True
 
-    # Load tier thresholds from rows after tier table header
+    # Load tier thresholds
     if tier_table_start is not None:
         db.execute('DELETE FROM tiers')
         sort_order = 0
-        for ridx in range(tier_table_start + 1, min(tier_table_start + 6, len(rows))):
+        for ridx in range(tier_table_start + 1, min(tier_table_start + 8, len(rows))):
             row = rows[ridx]
             if not any(row):
                 continue
             tier_name = str(row[0]).strip() if row[0] else None
-            if not tier_name or tier_name.lower() in ('none', ''):
+            if not tier_name or tier_name.lower() in ('none', '', 'lower range', 'lower_range'):
                 continue
             try:
-                lo = float(row[1]) if len(row) > 1 and row[1] is not None else 0
-                hi = float(row[2]) if len(row) > 2 and row[2] is not None else 3
+                lo = float(row[1]) if len(row) > 1 and row[1] is not None else 0.0
+                hi = float(row[2]) if len(row) > 2 and row[2] is not None else 3.0
             except (ValueError, TypeError):
                 continue
             db.execute(
@@ -321,12 +351,11 @@ def _load_standard_format(wb, results):
             for row in rows[1:]:
                 if not any(row):
                     continue
-                d = dict(zip(hdrs, row))
+                d    = dict(zip(hdrs, row))
                 name = d.get('name') or d.get('model_name')
                 if not name:
                     continue
-                existing = db.execute('SELECT id FROM models WHERE name=?', (str(name),)).fetchone()
-                if not existing:
+                if not db.execute('SELECT id FROM models WHERE name=?', (str(name),)).fetchone():
                     db.execute('INSERT INTO models (name, risk_type) VALUES (?,?)',
                                (str(name), str(d.get('risk_type') or '')))
                     results['models'] += 1
@@ -340,7 +369,7 @@ def _load_standard_format(wb, results):
             for row in rows[1:]:
                 if not any(row):
                     continue
-                d = dict(zip(hdrs, row))
+                d   = dict(zip(hdrs, row))
                 grp = d.get('group') or d.get('grp')
                 if not grp:
                     continue
@@ -367,7 +396,7 @@ def _load_standard_format(wb, results):
             for i, row in enumerate(rows[1:]):
                 if not any(row):
                     continue
-                d = dict(zip(hdrs, row))
+                d    = dict(zip(hdrs, row))
                 name = d.get('name') or d.get('tier')
                 if not name:
                     continue
@@ -384,7 +413,7 @@ def _load_standard_format(wb, results):
         for row in ws.iter_rows(values_only=True):
             if not row or not row[0]:
                 continue
-            key = str(row[0]).strip()
+            key   = str(row[0]).strip()
             value = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ''
             db.execute('INSERT OR REPLACE INTO config_kv (key, value) VALUES (?,?)', (key, value))
             results['settings'] += 1
@@ -398,19 +427,20 @@ def _load_standard_format(wb, results):
             for row in rows[1:]:
                 if not any(row):
                     continue
-                d = dict(zip(hdrs, row))
+                d          = dict(zip(hdrs, row))
                 model_name = d.get('model_name') or d.get('model')
                 param_name = d.get('sub_parameter') or d.get('parameter')
                 if not model_name or not param_name:
                     continue
-                model_row = db.execute('SELECT id FROM models WHERE name=?', (str(model_name),)).fetchone()
-                param_row = db.execute('SELECT id FROM parameters WHERE sub_parameter=?', (str(param_name),)).fetchone()
-                if not model_row or not param_row:
+                mr = db.execute('SELECT id FROM models WHERE name=?', (str(model_name),)).fetchone()
+                pr = db.execute('SELECT id FROM parameters WHERE sub_parameter=?',
+                                (str(param_name),)).fetchone()
+                if not mr or not pr:
                     continue
                 level = max(1, min(3, int(d.get('level') or 1)))
                 db.execute(
                     'INSERT OR REPLACE INTO model_scores (model_id, parameter_id, level) VALUES (?,?,?)',
-                    (model_row['id'], param_row['id'], level)
+                    (mr['id'], pr['id'], level)
                 )
                 results['scores'] += 1
             db.commit()
