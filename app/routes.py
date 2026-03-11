@@ -382,7 +382,7 @@ def upload():
         filepath   = os.path.join(upload_dir, file.filename)
         file.save(filepath)
         try:
-            from .services.excelloader import load_excel
+            from .services.excelloader import load_excel, _debug_matrix
             results   = load_excel(filepath)
             score_msg = (f"{results.get('scores',0)} scores"
                          if results.get('score_row_found')
@@ -393,8 +393,16 @@ def upload():
                 f"Tiering computed for {results.get('computed', 0)} models.",
                 'success'
             )
+            if not results.get('score_row_found') or results['tiers'] == 0:
+                try:
+                    dbg = _debug_matrix(filepath)
+                    flash(f'DEBUG: {dbg}', 'warning')
+                except Exception:
+                    pass
         except Exception as e:
+            import traceback
             flash(f'Error loading Excel: {str(e)}', 'danger')
+            flash(f'Trace: {traceback.format_exc()[:600]}', 'warning')
         return redirect(url_for('main.upload'))
     return render_template('upload.html')
 
