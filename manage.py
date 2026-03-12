@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """CLI management commands for Model Tiering Web App."""
 import sys
