@@ -1,3 +1,5 @@
+
+# VERSION: 2026-03-11-v5 (correct defaults 0.40/0.40/0.20, SUMPRODUCT formula)
 """Tiering computation — matches Excel SUMPRODUCT formula exactly.
 
 Excel row 22 formula:
