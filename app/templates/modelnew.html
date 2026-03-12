@@ -1,3 +1,4 @@
+
 {% extends "base.html" %}
 {% block title %}New Model{% endblock %}
 
@@ -31,6 +32,13 @@
                     <option value="Other">Other</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label for="manual_score">Final Score <span style="font-weight:400;font-size:0.85rem;opacity:0.7;">(optional override — e.g. 1.86)</span></label>
+                <input type="number" id="manual_score" name="manual_score"
+                       class="form-control" style="max-width:200px;"
+                       placeholder="1.00 – 3.00" min="1.0" max="3.0" step="0.01">
+                <small style="opacity:0.6;">If entered, this score is used directly and overrides the computed result.</small>
+            </div>
         </div>
     </div>
 
@@ -56,7 +64,12 @@
                     {% for p in params %}
                     <tr>
                         <td><strong>{{ p['sub_parameter'] }}</strong></td>
-                        <td class="text-muted">{{ p['weight'] }}</td>
+                        <td>
+                            <input type="number" name="weight_{{ p['id'] }}"
+                                   value="{{ p['weight'] }}"
+                                   class="form-control" style="width:80px;"
+                                   min="0" max="1" step="0.01">
+                        </td>
                         <td>
                             <select name="score_{{ p['id'] }}" class="form-control" style="max-width:420px;">
                                 <option value="">-- Not set --</option>
