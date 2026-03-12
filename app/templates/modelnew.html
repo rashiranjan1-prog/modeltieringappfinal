@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 {% block title %}New Model{% endblock %}
 
@@ -88,10 +87,53 @@
     </div>
     {% endif %}
 
+    <div id="weight-warning" style="display:none;max-width:800px;margin-bottom:1rem;
+         padding:0.75rem 1rem;background:#5a2d0c;border:1px solid #e67e22;
+         border-radius:6px;color:#f0a500;font-size:0.9rem;">
+        ⚠️ <span id="weight-warning-text"></span>
+    </div>
+
     <div class="form-actions" style="max-width:800px;">
         <button type="submit" class="btn btn-primary">Create Model</button>
         <a href="{{ url_for('main.models_list') }}" class="btn btn-outline">Cancel</a>
     </div>
 
 </form>
+
+<script>
+// Validate that weights within each group sum to 1.0
+function checkWeights() {
+    const groups = {};
+    document.querySelectorAll('input[name^="weight_"]').forEach(input => {
+        const row = input.closest('tr');
+        const table = input.closest('table');
+        const groupHeader = table.previousElementSibling;
+        const grp = groupHeader ? groupHeader.querySelector('span').textContent.trim() : 'Unknown';
+        if (!groups[grp]) groups[grp] = [];
+        groups[grp].push(parseFloat(input.value) || 0);
+    });
+
+    const warnings = [];
+    for (const [grp, weights] of Object.entries(groups)) {
+        const total = weights.reduce((a, b) => a + b, 0);
+        if (Math.abs(total - 1.0) > 0.001) {
+            warnings.push(`${grp} weights sum to ${total.toFixed(3)} (should be 1.000)`);
+        }
+    }
+
+    const box = document.getElementById('weight-warning');
+    if (warnings.length > 0) {
+        document.getElementById('weight-warning-text').textContent = warnings.join(' | ');
+        box.style.display = 'block';
+    } else {
+        box.style.display = 'none';
+    }
+}
+
+// Check on any weight change
+document.querySelectorAll('input[name^="weight_"]').forEach(input => {
+    input.addEventListener('input', checkWeights);
+});
+checkWeights(); // run on load
+</script>
 {% endblock %}
