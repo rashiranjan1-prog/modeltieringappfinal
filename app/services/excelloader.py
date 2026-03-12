@@ -62,8 +62,53 @@ def load_excel(filepath):
     else:
         _load_standard_format(wb, results)
 
-    results['computed'] = compute_tiering_for_all()
+    results['computed'] = _smart_compute(results.get('score_row_found', False))
     return results
+
+
+def _smart_compute(score_row_found):
+    """
+    Compute tiering for all models.
+    If the Excel Internal row was loaded, trust those scores for models that have them
+    and only recompute models that have no computed_score yet (the new ones).
+    """
+    from .tieringlogic import compute_tiering_for_model
+    db = get_db()
+
+    if not score_row_found:
+        # No Internal row scores saved — recompute everything from param scores
+        from .tieringlogic import compute_tiering_for_all
+        return compute_tiering_for_all()
+
+    models = db.execute('SELECT * FROM models').fetchall()
+    tiers  = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
+    count  = 0
+
+    for m in models:
+        mid   = m['id']
+        score = m['computed_score']
+
+        if score and float(score) > 0:
+            # Trust the Excel Internal row score — just assign the tier
+            from .tieringlogic import _match_tier
+            matched = _match_tier(float(score), tiers)
+            # Respect any existing manual override
+            was_overridden = (m['current_tier'] and m['computed_tier'] and
+                              m['current_tier'] != m['computed_tier'])
+            current = m['current_tier'] if was_overridden else matched
+            db.execute(
+                'UPDATE models SET computed_tier=?, current_tier=?,'
+                ' last_computed_at=datetime("now") WHERE id=?',
+                (matched, current, mid)
+            )
+        else:
+            # No Internal row score for this model — recompute from param scores
+            compute_tiering_for_model(mid)
+
+        count += 1
+
+    db.commit()
+    return count
 
 
 def _get_hidden_col_indices(filepath, sheet_name):
