@@ -1,3 +1,4 @@
+
 # VERSION: 2026-03-12-v6 (METADATA_COLS=7 fix, robust weight matching, hidden cols included)
 """
 Excel loader — supports two formats:
@@ -173,7 +174,7 @@ def _load_matrix_format(wb, filepath, results):
                 'INSERT INTO parameters '
                 '(grp, sub_parameter, criteria, description, weight,'
                 ' level1_label, level2_label, level3_label) VALUES (?,?,?,?,?,?,?,?)',
-                (current_group, sub, '', desc, 1.0,
+                (current_group, sub, '', desc, 0.2,
                  l1 or 'Low', l2 or 'Medium', l3 or 'High')
             )
             pid = c.lastrowid
@@ -493,7 +494,7 @@ def _load_standard_format(wb, results):
                     ' level1_label, level2_label, level3_label) VALUES (?,?,?,?,?,?,?,?)',
                     (str(grp), str(d.get('sub_parameter') or ''),
                      str(d.get('criteria') or ''), str(d.get('description') or ''),
-                     float(d.get('weight') or 1.0),
+                     float(d.get('weight') or 0.2),
                      str(d.get('low_(1)') or 'Low'),
                      str(d.get('medium_(2)') or 'Medium'),
                      str(d.get('high_(3)') or 'High'))
