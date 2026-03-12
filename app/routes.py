@@ -1,3 +1,4 @@
+
 import json
 import csv
 import io
@@ -183,6 +184,32 @@ def model_save_scores(model_id):
     compute_tiering_for_model(model_id)
     flash('Scores saved and tiering computed.', 'success')
     return redirect(url_for('main.model_detail', model_id=model_id))
+
+
+@main_bp.route('/admin/fix-weights')
+@login_required
+@roles_required('Admin', 'Developer')
+def fix_weights():
+    db = get_db()
+    EXPECTED = {
+        'Materiality': [0.35, 0.35, 0.20, 0.10],
+        'Criticality': [0.35, 0.35, 0.20, 0.10],
+        'Complexity':  [0.20, 0.20, 0.20, 0.20, 0.20],
+    }
+    fixed = 0
+    for grp, weights in EXPECTED.items():
+        params = db.execute(
+            'SELECT id, sub_parameter, weight FROM parameters WHERE LOWER(TRIM(grp))=? ORDER BY id',
+            (grp.lower(),)
+        ).fetchall()
+        for i, p in enumerate(params):
+            w = weights[i] if i < len(weights) else round(1.0/len(params), 4)
+            if abs(float(p['weight'] or 0) - w) > 0.001:
+                db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, p['id']))
+                fixed += 1
+    db.commit()
+    flash(f'Fixed {fixed} parameter weight(s).', 'success')
+    return redirect(url_for('main.parameters_list'))
 
 
 @main_bp.route('/models/<int:model_id>/delete', methods=['POST'])
