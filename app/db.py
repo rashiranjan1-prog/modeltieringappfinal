@@ -1,3 +1,4 @@
+
 """Database access layer using stdlib sqlite3."""
 import sqlite3
 import hashlib
