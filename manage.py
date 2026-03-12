@@ -15,16 +15,17 @@ def get_app():
 def cmd_init_db():
     app = get_app()
     with app.app_context():
-        from app.db import get_db, create_tables, hash_password
+        from app.db import get_db, create_tables, migrate, hash_password
         db = get_db()
         create_tables(db)
+        migrate(db)
         print("✓ Tables created.")
 
         # Default config
         defaults = [
             ('materiality_weight', '0.4'),
-            ('criticality_weight', '0.35'),
-            ('complexity_weight', '0.25'),
+            ('criticality_weight', '0.4'),
+            ('complexity_weight',  '0.2'),
         ]
         for k, v in defaults:
             db.execute('INSERT OR IGNORE INTO config_kv (key, value) VALUES (?,?)', (k, v))
