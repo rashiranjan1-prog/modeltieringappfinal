@@ -112,6 +112,28 @@ def create_tables(db):
         stmt = stmt.strip()
         if stmt:
             db.execute(stmt)
+    # Self-heal param weights: if any group has weights summing to > 1.2
+    # (meaning at least one param stuck at default 1.0), reset to equal weights
+    groups_params = {}
+    for row in db.execute('SELECT id, grp, weight FROM parameters').fetchall():
+        groups_params.setdefault(row['grp'], []).append((row['id'], row['weight']))
+
+    EXPECTED_COUNTS = {'Materiality': 4, 'Criticality': 4, 'Complexity': 5}
+    EXPECTED_WEIGHTS = {
+        'Materiality': [0.35, 0.35, 0.20, 0.10],
+        'Criticality': [0.35, 0.35, 0.20, 0.10],
+        'Complexity':  [0.20, 0.20, 0.20, 0.20, 0.20],
+    }
+
+    for grp, params in groups_params.items():
+        total_w = sum(w for _, w in params)
+        if total_w > 1.2 and grp in EXPECTED_WEIGHTS:
+            # weights are wrong — reset to expected
+            expected = EXPECTED_WEIGHTS[grp]
+            for i, (pid, _) in enumerate(params):
+                w = expected[i] if i < len(expected) else round(1.0 / len(params), 4)
+                db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, pid))
+
     db.commit()
 
 
