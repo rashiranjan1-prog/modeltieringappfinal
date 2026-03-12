@@ -1,4 +1,3 @@
-
 """Database access layer using stdlib sqlite3."""
 import sqlite3
 import hashlib
@@ -63,7 +62,7 @@ CREATE TABLE IF NOT EXISTS parameters (
     sub_parameter TEXT,
     criteria TEXT,
     description TEXT,
-    weight REAL DEFAULT 1.0
+    weight REAL DEFAULT 0.2
 );
 
 CREATE TABLE IF NOT EXISTS model_scores (
