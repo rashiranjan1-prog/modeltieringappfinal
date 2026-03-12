@@ -7,13 +7,16 @@
     <a href="{{ url_for('main.models_list') }}" class="btn btn-outline">&#8592; Back</a>
 </div>
 
-<div class="card" style="max-width:600px;">
-    <div class="card-header">Model Details</div>
-    <div class="card-body">
-        <form method="POST" action="{{ url_for('main.model_new') }}">
+<form method="POST" action="{{ url_for('main.model_new') }}">
+
+    <!-- Model Details -->
+    <div class="card" style="max-width:800px; margin-bottom:1.5rem;">
+        <div class="card-header">Model Details</div>
+        <div class="card-body">
             <div class="form-group">
                 <label for="name">Model Name <span class="text-danger">*</span></label>
-                <input type="text" id="name" name="name" class="form-control" placeholder="e.g. Credit Risk Model A" required autofocus>
+                <input type="text" id="name" name="name" class="form-control"
+                       placeholder="e.g. Credit Risk Model A" required autofocus>
             </div>
             <div class="form-group">
                 <label for="risk_type">Risk Type</label>
@@ -24,14 +27,58 @@
                     <option value="Operational Risk">Operational Risk</option>
                     <option value="Liquidity Risk">Liquidity Risk</option>
                     <option value="Compliance Risk">Compliance Risk</option>
+                    <option value="ICAAP">ICAAP</option>
                     <option value="Other">Other</option>
                 </select>
             </div>
-            <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Create Model</button>
-                <a href="{{ url_for('main.models_list') }}" class="btn btn-outline">Cancel</a>
-            </div>
-        </form>
+        </div>
     </div>
-</div>
+
+    <!-- Parameter Scoring -->
+    {% if groups %}
+    <div class="card" style="max-width:800px; margin-bottom:1.5rem;">
+        <div class="card-header">Parameter Scores <span style="font-weight:400;font-size:0.85rem;opacity:0.7;">(optional — you can also set these later)</span></div>
+        <div class="card-body" style="padding:0;">
+
+            {% for grp, params in groups.items() %}
+            <div style="padding:0.75rem 1.25rem 0.25rem; background:var(--card-bg); border-bottom:1px solid var(--border);">
+                <span style="font-weight:700; font-size:0.8rem; letter-spacing:0.08em; color:var(--accent); text-transform:uppercase;">{{ grp }}</span>
+            </div>
+            <table class="table" style="margin-bottom:0;">
+                <thead>
+                    <tr>
+                        <th style="width:25%;">Sub-Parameter</th>
+                        <th style="width:10%;">Weight</th>
+                        <th>Level</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in params %}
+                    <tr>
+                        <td><strong>{{ p['sub_parameter'] }}</strong></td>
+                        <td class="text-muted">{{ p['weight'] }}</td>
+                        <td>
+                            <select name="score_{{ p['id'] }}" class="form-control" style="max-width:420px;">
+                                <option value="">-- Not set --</option>
+                                <option value="1">1 — {{ p['level1_label'] or 'Low' }}</option>
+                                <option value="2">2 — {{ p['level2_label'] or 'Medium' }}</option>
+                                <option value="3">3 — {{ p['level3_label'] or 'High' }}</option>
+                            </select>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endfor %}
+
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="form-actions" style="max-width:800px;">
+        <button type="submit" class="btn btn-primary">Create Model</button>
+        <a href="{{ url_for('main.models_list') }}" class="btn btn-outline">Cancel</a>
+    </div>
+
+</form>
 {% endblock %}
