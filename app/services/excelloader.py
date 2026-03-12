@@ -1,3 +1,5 @@
+
+
 # VERSION: 2026-03-12-v6 (METADATA_COLS=7 fix, robust weight matching, hidden cols included)
 """
 Excel loader — supports two formats:
