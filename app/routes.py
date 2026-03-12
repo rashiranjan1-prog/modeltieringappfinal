@@ -1,3 +1,5 @@
+
+
 import json
 import csv
 import io
@@ -76,8 +78,19 @@ def model_new():
         model_id = cur.lastrowid
         db.commit()
 
-        # Save parameter scores if provided
+        # Save parameter weights and scores if provided
         for p in parameters:
+            # Update weight if changed
+            new_weight = request.form.get(f'weight_{p["id"]}', '').strip()
+            if new_weight:
+                try:
+                    w = float(new_weight)
+                    if 0 < w <= 1:
+                        db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, p['id']))
+                except ValueError:
+                    pass
+
+            # Save level score
             val = request.form.get(f'score_{p["id"]}', '').strip()
             if val:
                 try:
@@ -89,6 +102,16 @@ def model_new():
                 except ValueError:
                     pass
         db.commit()
+
+        # Manual score override
+        manual_score = request.form.get('manual_score', '').strip()
+        if manual_score:
+            try:
+                ms = round(max(1.0, min(3.0, float(manual_score))), 2)
+                db.execute('UPDATE models SET computed_score=? WHERE id=?', (ms, model_id))
+                db.commit()
+            except ValueError:
+                pass
 
         # Compute tiering
         from .services.tieringlogic import compute_tiering_for_model
