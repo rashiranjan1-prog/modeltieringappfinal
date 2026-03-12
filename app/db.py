@@ -112,24 +112,27 @@ def create_tables(db):
         stmt = stmt.strip()
         if stmt:
             db.execute(stmt)
-    # Self-heal param weights: if any group has weights summing to > 1.2
-    # (meaning at least one param stuck at default 1.0), reset to equal weights
-    groups_params = {}
-    for row in db.execute('SELECT id, grp, weight FROM parameters').fetchall():
-        groups_params.setdefault(row['grp'], []).append((row['id'], row['weight']))
-
-    EXPECTED_COUNTS = {'Materiality': 4, 'Criticality': 4, 'Complexity': 5}
+    # Fix wrong param weights every startup (e.g. Dependency stuck at 1.0)
+    # If any group's weights sum > 1.2, at least one param has default 1.0 → reset all
     EXPECTED_WEIGHTS = {
         'Materiality': [0.35, 0.35, 0.20, 0.10],
         'Criticality': [0.35, 0.35, 0.20, 0.10],
         'Complexity':  [0.20, 0.20, 0.20, 0.20, 0.20],
     }
+    groups_params = {}
+    for row in db.execute('SELECT id, grp, weight FROM parameters').fetchall():
+        groups_params.setdefault(row['grp'], []).append((row['id'], float(row['weight'] or 1.0)))
+
+    # Build case-insensitive lookup for expected weights
+    EXPECTED_WEIGHTS_NORM = {k.lower().strip(): v for k, v in EXPECTED_WEIGHTS.items()}
 
     for grp, params in groups_params.items():
+        grp_key = grp.lower().strip()
         total_w = sum(w for _, w in params)
-        if total_w > 1.2 and grp in EXPECTED_WEIGHTS:
-            # weights are wrong — reset to expected
-            expected = EXPECTED_WEIGHTS[grp]
+        expected = EXPECTED_WEIGHTS_NORM.get(grp_key)
+        # Trigger if: any param has weight=1.0 (default), OR total > 1.2
+        has_default = any(abs(w - 1.0) < 0.001 for _, w in params)
+        if expected and (has_default or total_w > 1.2):
             for i, (pid, _) in enumerate(params):
                 w = expected[i] if i < len(expected) else round(1.0 / len(params), 4)
                 db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, pid))
@@ -156,5 +159,29 @@ def migrate(db):
         exists = db.execute('SELECT 1 FROM config_kv WHERE key=?', (key,)).fetchone()
         if not exists:
             db.execute('INSERT INTO config_kv (key, value) VALUES (?,?)', (key, val))
+
+    # Fix wrong param weights every startup (e.g. Dependency stuck at 1.0)
+    EXPECTED_WEIGHTS = {
+        'Materiality': [0.35, 0.35, 0.20, 0.10],
+        'Criticality': [0.35, 0.35, 0.20, 0.10],
+        'Complexity':  [0.20, 0.20, 0.20, 0.20, 0.20],
+    }
+    groups_params = {}
+    for row in db.execute('SELECT id, grp, weight FROM parameters').fetchall():
+        groups_params.setdefault(row['grp'], []).append((row['id'], float(row['weight'] or 1.0)))
+
+    # Build case-insensitive lookup for expected weights
+    EXPECTED_WEIGHTS_NORM = {k.lower().strip(): v for k, v in EXPECTED_WEIGHTS.items()}
+
+    for grp, params in groups_params.items():
+        grp_key = grp.lower().strip()
+        total_w = sum(w for _, w in params)
+        expected = EXPECTED_WEIGHTS_NORM.get(grp_key)
+        # Trigger if: any param has weight=1.0 (default), OR total > 1.2
+        has_default = any(abs(w - 1.0) < 0.001 for _, w in params)
+        if expected and (has_default or total_w > 1.2):
+            for i, (pid, _) in enumerate(params):
+                w = expected[i] if i < len(expected) else round(1.0 / len(params), 4)
+                db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, pid))
 
     db.commit()
