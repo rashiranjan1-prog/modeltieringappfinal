@@ -44,7 +44,7 @@
                     <td style="display:flex;gap:6px;align-items:center;">
                       <a href="{{ url_for('main.model_detail', model_id=m['id']) }}" class="btn btn-sm btn-outline">View</a>
                       <form method="POST" action="{{ url_for('main.model_delete', model_id=m['id']) }}"
-                            onsubmit="return confirm('Delete {{ m['name']|replace("'","") }}? This cannot be undone.');"
+                            onsubmit="return confirm('Delete this model? This cannot be undone.');"
                             style="margin:0;">
                         <button type="submit" class="btn btn-sm" style="background:#c0392b;color:#fff;border:none;">Delete</button>
                       </form>
