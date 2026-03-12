@@ -41,7 +41,14 @@
                         {% endif %}
                     </td>
                     <td>{{ m['last_computed_at'][:10] if m['last_computed_at'] else '-' if m['last_computed_at'] else '-' }}</td>
-                    <td><a href="{{ url_for('main.model_detail', model_id=m['id']) }}" class="btn btn-sm btn-outline">View</a></td>
+                    <td style="display:flex;gap:6px;align-items:center;">
+                      <a href="{{ url_for('main.model_detail', model_id=m['id']) }}" class="btn btn-sm btn-outline">View</a>
+                      <form method="POST" action="{{ url_for('main.model_delete', model_id=m['id']) }}"
+                            onsubmit="return confirm('Delete {{ m['name']|replace("'","") }}? This cannot be undone.');"
+                            style="margin:0;">
+                        <button type="submit" class="btn btn-sm" style="background:#c0392b;color:#fff;border:none;">Delete</button>
+                      </form>
+                    </td>
                 </tr>
                 {% else %}
                 <tr><td colspan="8" class="text-center text-muted">No models found. <a href="{{ url_for('main.model_new') }}">Create one</a>.</td></tr>
