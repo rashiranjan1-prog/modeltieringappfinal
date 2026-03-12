@@ -1,5 +1,3 @@
-
-
 import json
 import csv
 import io
@@ -62,18 +60,44 @@ def models_list():
 @login_required
 @roles_required('Admin', 'Developer')
 def model_new():
+    db = get_db()
+    parameters = db.execute(f'SELECT * FROM parameters ORDER BY {GRP_ORDER}, id').fetchall()
+    groups = {}
+    for p in parameters:
+        groups.setdefault(p['grp'], []).append(p)
+
     if request.method == 'POST':
-        name     = request.form.get('name', '').strip()
-        risk_type= request.form.get('risk_type', '').strip()
+        name      = request.form.get('name', '').strip()
+        risk_type = request.form.get('risk_type', '').strip()
         if not name:
             flash('Model name is required.', 'danger')
-            return render_template('modelnew.html')
-        db  = get_db()
+            return render_template('modelnew.html', groups=groups, parameters=parameters)
         cur = db.execute('INSERT INTO models (name, risk_type) VALUES (?,?)', (name, risk_type))
+        model_id = cur.lastrowid
         db.commit()
+
+        # Save parameter scores if provided
+        for p in parameters:
+            val = request.form.get(f'score_{p["id"]}', '').strip()
+            if val:
+                try:
+                    level = max(1, min(3, int(val)))
+                    db.execute(
+                        'INSERT OR REPLACE INTO model_scores (model_id, parameter_id, level) VALUES (?,?,?)',
+                        (model_id, p['id'], level)
+                    )
+                except ValueError:
+                    pass
+        db.commit()
+
+        # Compute tiering
+        from .services.tieringlogic import compute_tiering_for_model
+        compute_tiering_for_model(model_id)
+
         flash(f'Model "{name}" created.', 'success')
-        return redirect(url_for('main.model_detail', model_id=cur.lastrowid))
-    return render_template('modelnew.html')
+        return redirect(url_for('main.model_detail', model_id=model_id))
+
+    return render_template('modelnew.html', groups=groups, parameters=parameters)
 
 
 @main_bp.route('/models/<int:model_id>')
