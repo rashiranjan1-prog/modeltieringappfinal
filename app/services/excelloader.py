@@ -257,13 +257,12 @@ def _load_matrix_format(wb, filepath, results):
         MODEL_START_COL = 8
 
     # Build list of (col_index, model_id) for all model columns
-    # Always skip cols 1-7 (metadata) even if not flagged as hidden
+    # Skip cols 1-7 (metadata) but INCLUDE hidden cols — hidden model columns still have scores
     model_cols = []
     for col_idx in range(MODEL_START_COL, len(header) + 1):
         if col_idx <= METADATA_COLS:
             continue
-        if col_idx in hidden_cols:
-            continue
+        # Do NOT skip hidden cols — users hide model columns in Excel but scores still exist
         cell_val = header[col_idx - 1] if col_idx - 1 < len(header) else None
         mid = _find_model_id(cell_val)
         if mid is not None:
@@ -353,10 +352,17 @@ def _load_matrix_format(wb, filepath, results):
     db.commit()
 
     # Save param weights — use normalised lookup, ALWAYS overwrite
+    # Also do a direct DB update by normalised name for robustness
     for nk, w in param_weight_rows.items():
         pid = param_map_norm.get(nk)
         if pid:
             db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, pid))
+        else:
+            # Fallback: update by matching normalised sub_parameter name in DB
+            db.execute(
+                'UPDATE parameters SET weight=? WHERE LOWER(TRIM(sub_parameter))=?',
+                (w, nk)
+            )
     db.commit()
 
     # Save individual scores per model per param
