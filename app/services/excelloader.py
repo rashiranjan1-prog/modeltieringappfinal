@@ -187,15 +187,24 @@ def _load_matrix_format(wb, filepath, results):
         ns = _norm(s)
         return model_map_norm.get(ns)
 
+    # Cols 1-7 (A-G) are ALWAYS metadata: Parameter, Sub-Param, Description,
+    # Value Range, Weight, duplicate Weight, spacer. Never model columns.
+    METADATA_COLS = 7
+
     MODEL_START_COL = None
     for col_idx, cell_val in enumerate(header, 1):
+        if col_idx <= METADATA_COLS:   # always skip metadata cols
+            continue
         if col_idx in hidden_cols:
             continue
         if _find_model_id(cell_val) is not None:
             MODEL_START_COL = col_idx
             break
     if MODEL_START_COL is None:
+        # fallback ignoring hidden flag but still respect metadata boundary
         for col_idx, cell_val in enumerate(header, 1):
+            if col_idx <= METADATA_COLS:
+                continue
             if _find_model_id(cell_val) is not None:
                 MODEL_START_COL = col_idx
                 break
@@ -203,8 +212,11 @@ def _load_matrix_format(wb, filepath, results):
         MODEL_START_COL = 8
 
     # Build list of (col_index, model_id) for all model columns
+    # Always skip cols 1-7 (metadata) even if not flagged as hidden
     model_cols = []
     for col_idx in range(MODEL_START_COL, len(header) + 1):
+        if col_idx <= METADATA_COLS:
+            continue
         if col_idx in hidden_cols:
             continue
         cell_val = header[col_idx - 1] if col_idx - 1 < len(header) else None
