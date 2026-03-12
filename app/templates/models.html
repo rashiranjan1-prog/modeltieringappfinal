@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 {% block title %}Models{% endblock %}
 
@@ -44,11 +43,13 @@
                     <td>{{ m['last_computed_at'][:10] if m['last_computed_at'] else '-' if m['last_computed_at'] else '-' }}</td>
                     <td style="display:flex;gap:6px;align-items:center;">
                       <a href="{{ url_for('main.model_detail', model_id=m['id']) }}" class="btn btn-sm btn-outline">View</a>
+                      {% if current_user.role in ['Admin', 'Developer'] %}
                       <form method="POST" action="{{ url_for('main.model_delete', model_id=m['id']) }}"
                             onsubmit="return confirm('Delete this model? This cannot be undone.');"
                             style="margin:0;">
                         <button type="submit" class="btn btn-sm" style="background:#c0392b;color:#fff;border:none;">Delete</button>
                       </form>
+                      {% endif %}
                     </td>
                 </tr>
                 {% else %}
