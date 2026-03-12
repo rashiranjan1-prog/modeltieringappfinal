@@ -1,3 +1,4 @@
+# VERSION: 2026-03-11-v5 (float-based Internal detection, fuzzy matching, tier fix)
 """
 Excel loader — supports two formats:
 
@@ -86,6 +87,8 @@ def _load_matrix_format(wb, filepath, results):
     db = get_db()
 
     # Full wipe for clean reimport
+    import sys
+    print("\n\n====== EXCELLOADER v5 RUNNING ======", file=sys.stderr, flush=True)
     db.execute('DELETE FROM model_scores')
     db.execute('DELETE FROM overrides')
     db.execute('DELETE FROM models')
@@ -255,6 +258,9 @@ def _load_matrix_format(wb, filepath, results):
                 param_score_rows[nk] = idx
 
     # --- Fallback: find Internal score row by float values in model columns ---
+    import sys
+    print(f"====== internal_score_row after text scan: {internal_score_row} ======", file=sys.stderr, flush=True)
+    print(f"====== model_cols count: {len(model_cols)} ======", file=sys.stderr, flush=True)
     # Handles case where 'Internal' is a floating textbox (not a real cell value)
     if internal_score_row is None and model_cols:
         # Look for a row after row 18 where model columns contain float scores (not 1/2/3)
@@ -277,6 +283,9 @@ def _load_matrix_format(wb, filepath, results):
                 internal_score_row = idx
                 break
 
+    import sys
+    print(f"====== FINAL internal_score_row: {internal_score_row} ======", file=sys.stderr, flush=True)
+    print(f"====== tier_table_start: {tier_table_start} ======", file=sys.stderr, flush=True)
     # Save group weights to config_kv
     group_cfg = {'Materiality': 'materiality_weight',
                  'Criticality': 'criticality_weight',
