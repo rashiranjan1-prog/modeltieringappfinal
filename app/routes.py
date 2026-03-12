@@ -1,4 +1,3 @@
-
 import json
 import csv
 import io
@@ -137,6 +136,18 @@ def model_save_scores(model_id):
     compute_tiering_for_model(model_id)
     flash('Scores saved and tiering computed.', 'success')
     return redirect(url_for('main.model_detail', model_id=model_id))
+
+
+@main_bp.route('/models/<int:model_id>/delete', methods=['POST'])
+@login_required
+def model_delete(model_id):
+    db = get_db()
+    db.execute('DELETE FROM model_scores WHERE model_id=?', (model_id,))
+    db.execute('DELETE FROM overrides WHERE model_id=?', (model_id,))
+    db.execute('DELETE FROM models WHERE id=?', (model_id,))
+    db.commit()
+    flash('Model deleted.', 'info')
+    return redirect(url_for('main.models_list'))
 
 
 @main_bp.route('/models/<int:model_id>/override', methods=['POST'])
