@@ -1,4 +1,4 @@
-# VERSION: 2026-03-11-v5 (float-based Internal detection, fuzzy matching, tier fix)
+# VERSION: 2026-03-12-v6 (METADATA_COLS=7 fix, robust weight matching, hidden cols included)
 """
 Excel loader — supports two formats:
 
@@ -351,18 +351,34 @@ def _load_matrix_format(wb, filepath, results):
                    (group_cfg[grp], str(w)))
     db.commit()
 
-    # Save param weights — use normalised lookup, ALWAYS overwrite
-    # Also do a direct DB update by normalised name for robustness
+    # Save param weights — multi-strategy to handle typos and name variations
+    all_params_in_db = db.execute('SELECT id, sub_parameter FROM parameters').fetchall()
+    
     for nk, w in param_weight_rows.items():
+        updated = False
+        
+        # Strategy 1: exact param_map_norm lookup
         pid = param_map_norm.get(nk)
         if pid:
             db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, pid))
-        else:
-            # Fallback: update by matching normalised sub_parameter name in DB
+            updated = True
+        
+        if not updated:
+            # Strategy 2: direct SQL normalised match
             db.execute(
                 'UPDATE parameters SET weight=? WHERE LOWER(TRIM(sub_parameter))=?',
                 (w, nk)
             )
+            updated = True
+
+        if not updated:
+            # Strategy 3: fuzzy — match first 6 chars (handles typos like Dependancy/Dependency)
+            for p in all_params_in_db:
+                db_nk = _norm(p['sub_parameter'])
+                if len(nk) >= 6 and len(db_nk) >= 6 and nk[:6] == db_nk[:6]:
+                    db.execute('UPDATE parameters SET weight=? WHERE id=?', (w, p['id']))
+                    break
+
     db.commit()
 
     # Save individual scores per model per param
