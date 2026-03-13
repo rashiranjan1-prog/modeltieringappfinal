@@ -327,7 +327,8 @@ textarea.form-control { resize: vertical; }
 .override-list { list-style: none; }
 .override-item { padding: 0.85rem 1rem; border-bottom: 1px solid var(--card-border); }
 .override-item:last-child { border-bottom: none; }
-.override-tiers { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+.override-tiers { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; flex-wrap: wrap; }
+.override-date { font-size: 0.75rem; color: var(--accent); background: rgba(79,172,254,0.1); padding: 0.15rem 0.5rem; border-radius: 4px; margin-left: auto; white-space: nowrap; }
 .arrow { color: var(--text-muted); }
 .override-meta { font-size: 0.78rem; color: var(--text-muted); }
 .override-reason { font-size: 0.85rem; margin-top: 0.25rem; color: var(--text); }
