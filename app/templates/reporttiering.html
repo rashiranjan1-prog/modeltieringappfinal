@@ -1,15 +1,54 @@
 {% extends "base.html" %}
 {% block title %}Tiering Report{% endblock %}
 
+{% block head %}
+<style>
+.level-badge-1 { display:inline-block;padding:3px 12px;border-radius:999px;font-weight:700;font-size:0.85rem;background:rgba(34,197,94,.18);color:#86efac;border:1px solid rgba(34,197,94,.4); }
+.level-badge-2 { display:inline-block;padding:3px 12px;border-radius:999px;font-weight:700;font-size:0.85rem;background:rgba(245,158,11,.18);color:#fcd34d;border:1px solid rgba(245,158,11,.4); }
+.level-badge-3 { display:inline-block;padding:3px 12px;border-radius:999px;font-weight:700;font-size:0.85rem;background:rgba(239,68,68,.18);color:#fca5a5;border:1px solid rgba(239,68,68,.4); }
+.lvl-cell { font-size:0.82rem; padding-left:8px; }
+.lvl-cell.active  { color:#e7e7ea; }
+.lvl-cell.inactive{ color:#4a4a5a; }
+.lvl-green { border-left:3px solid #22c55e; }
+.lvl-amber { border-left:3px solid #f59e0b; }
+.lvl-red   { border-left:3px solid #ef4444; }
+
+/* Model card collapsible */
+.model-report-card { margin-bottom: 2rem; }
+.model-report-card .score-banner {
+    display: flex; gap: 1.5rem; flex-wrap: wrap;
+    padding: 1rem 1.5rem; align-items: center;
+}
+.model-report-card .score-item { text-align: center; min-width: 100px; }
+.model-report-card .score-val  { font-size: 1.4rem; font-weight: 700; }
+.model-report-card .score-lbl  { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .05em; opacity: .6; margin-top: 2px; }
+
+.model-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none; gap: 1rem;
+}
+.model-card-header:hover { opacity: 0.88; }
+.model-card-title { font-size: 1rem; font-weight: 700; }
+.model-card-meta  { font-size: 0.8rem; opacity: 0.6; }
+.collapse-icon { font-size: 0.8rem; opacity: 0.5; transition: transform .2s; }
+.collapse-icon.open { transform: rotate(180deg); }
+.model-params-body { overflow: hidden; transition: max-height .25s ease; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
     <h2>Model Tiering Report</h2>
     <div class="page-actions">
-        <a href="{{ url_for('main.report_export_csv', risk_type=risk_filter, tier=tier_filter) }}" class="btn btn-outline">&#8595; Export CSV</a>
+        <a href="{{ url_for('main.report_export_excel', risk_type=risk_filter, tier=tier_filter) }}"
+           class="btn btn-primary">&#8595; Export Excel</a>
+        <a href="{{ url_for('main.report_export_csv', risk_type=risk_filter, tier=tier_filter) }}"
+           class="btn btn-outline">&#8595; Export CSV</a>
         <a href="{{ url_for('main.reports_list') }}" class="btn btn-outline">&#8592; Reports</a>
     </div>
 </div>
 
+<!-- Filters -->
 <div class="card mb-4">
     <div class="card-header">Filters</div>
     <div class="card-body">
@@ -53,35 +92,127 @@
     </div>
 </div>
 
-<div class="card">
-    <div class="card-header">
-        <span>Results ({{ models | length }} models)</span>
+<!-- Results count + expand/collapse all -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+    <span class="text-muted" style="font-size:0.85rem;">{{ models | length }} model{{ 's' if models | length != 1 }}</span>
+    {% if models %}
+    <div style="display:flex;gap:0.5rem;">
+        <button class="btn btn-sm btn-outline" onclick="setAll(true)">Expand All</button>
+        <button class="btn btn-sm btn-outline" onclick="setAll(false)">Collapse All</button>
     </div>
-    <div class="card-body p-0">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Model Name</th>
-                    <th>Risk Type</th>
-                    <th>Computed Score</th>
-                    <th>Computed Tier</th>
-                    <th>Current Tier</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for m in models %}
-                <tr>
-                    <td><a href="{{ url_for('main.model_detail', model_id=m['id']) }}">{{ m['name'] }}</a></td>
-                    <td>{{ m['risk_type'] or '-' }}</td>
-                    <td>{{ '%.2f'|format(m['computed_score'] or 0) }}</td>
-                    <td><span class="tier-badge">{{ m['computed_tier'] or '-' }}</span></td>
-                    <td><span class="tier-badge current">{{ m['current_tier'] or '-' }}</span></td>
-                </tr>
-                {% else %}
-                <tr><td colspan="5" class="text-center text-muted">No models match filters.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    {% endif %}
+</div>
+
+<!-- One card per model -->
+{% for m in models %}
+{% set model_scores = scores_lookup.get(m['id'], {}) %}
+<div class="card model-report-card">
+
+    <!-- Clickable header -->
+    <div class="card-header model-card-header" onclick="toggleCard(this)">
+        <div>
+            <div class="model-card-title">
+                <a href="{{ url_for('main.model_detail', model_id=m['id']) }}"
+                   onclick="event.stopPropagation()">{{ m['name'] }}</a>
+            </div>
+            <div class="model-card-meta">{{ m['risk_type'] or 'No risk type' }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:1.5rem;">
+            <div style="text-align:center;">
+                <div style="font-weight:700;font-size:1.1rem;">{{ '%.2f'|format(m['computed_score'] or 0) }}</div>
+                <div style="font-size:0.7rem;opacity:.55;text-transform:uppercase;">Score</div>
+            </div>
+            <div><span class="tier-badge">{{ m['computed_tier'] or '—' }}</span></div>
+            <div><span class="tier-badge current {% if m['current_tier'] != m['computed_tier'] %}overridden{% endif %}">{{ m['current_tier'] or '—' }}</span></div>
+            <span class="collapse-icon open">&#9660;</span>
+        </div>
+    </div>
+
+    <!-- Collapsible body -->
+    <div class="model-params-body">
+        <div class="card-body p-0">
+
+            {% if parameters %}
+            {% for group_name, group_params in param_groups.items() %}
+            <div class="param-group-header">{{ group_name }}</div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Sub-Parameter</th>
+                        <th>Description</th>
+                        <th>Weight</th>
+                        <th>Level</th>
+                        <th style="color:#22c55e">&#9632; Low (1)</th>
+                        <th style="color:#f59e0b">&#9632; Medium (2)</th>
+                        <th style="color:#ef4444">&#9632; High (3)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for param in group_params %}
+                    {% set score = model_scores.get(param['id']) %}
+                    {% set level = score if score else None %}
+                    <tr>
+                        <td style="font-weight:600">{{ param['sub_parameter'] or '—' }}</td>
+                        <td class="text-muted" style="font-size:0.83rem">{{ param['description'] or '—' }}</td>
+                        <td style="text-align:center">{{ param['weight'] }}</td>
+                        <td style="text-align:center">
+                            {% if level == 1 %}<span class="level-badge-1">1</span>
+                            {% elif level == 2 %}<span class="level-badge-2">2</span>
+                            {% elif level == 3 %}<span class="level-badge-3">3</span>
+                            {% else %}<span style="opacity:.35">—</span>{% endif %}
+                        </td>
+                        <td class="lvl-cell lvl-green {% if level == 1 %}active{% else %}inactive{% endif %}">{{ param['level1_label'] or 'Low' }}</td>
+                        <td class="lvl-cell lvl-amber {% if level == 2 %}active{% else %}inactive{% endif %}">{{ param['level2_label'] or 'Medium' }}</td>
+                        <td class="lvl-cell lvl-red   {% if level == 3 %}active{% else %}inactive{% endif %}">{{ param['level3_label'] or 'High' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endfor %}
+            {% else %}
+            <p class="text-muted p-3">No parameters defined yet.</p>
+            {% endif %}
+
+        </div>
     </div>
 </div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center text-muted">No models match the selected filters.</div>
+</div>
+{% endfor %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleCard(header) {
+    var body = header.nextElementSibling;
+    var icon = header.querySelector('.collapse-icon');
+    var isOpen = icon.classList.contains('open');
+    if (isOpen) {
+        body.style.maxHeight = body.scrollHeight + 'px';
+        requestAnimationFrame(function() { body.style.maxHeight = '0'; });
+        icon.classList.remove('open');
+    } else {
+        body.style.maxHeight = body.scrollHeight + 'px';
+        setTimeout(function() { body.style.maxHeight = 'none'; }, 260);
+        icon.classList.add('open');
+    }
+}
+
+function setAll(open) {
+    document.querySelectorAll('.model-params-body').forEach(function(body) {
+        var icon = body.previousElementSibling.querySelector('.collapse-icon');
+        if (open) {
+            body.style.maxHeight = 'none';
+            if (icon) icon.classList.add('open');
+        } else {
+            body.style.maxHeight = body.scrollHeight + 'px';
+            requestAnimationFrame(function() { body.style.maxHeight = '0'; });
+            if (icon) icon.classList.remove('open');
+        }
+    });
+}
+</script>
 {% endblock %}
