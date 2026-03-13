@@ -2,18 +2,6 @@
 {% block title %}{{ model['name'] }}{% endblock %}
 
 {% block content %}
-<style>
-.level-badge-1 { display:inline-block;padding:3px 12px;border-radius:999px;font-weight:700;font-size:0.85rem;background:rgba(34,197,94,.18);color:#86efac;border:1px solid rgba(34,197,94,.4); }
-.level-badge-2 { display:inline-block;padding:3px 12px;border-radius:999px;font-weight:700;font-size:0.85rem;background:rgba(245,158,11,.18);color:#fcd34d;border:1px solid rgba(245,158,11,.4); }
-.level-badge-3 { display:inline-block;padding:3px 12px;border-radius:999px;font-weight:700;font-size:0.85rem;background:rgba(239,68,68,.18);color:#fca5a5;border:1px solid rgba(239,68,68,.4); }
-.lvl-cell { font-size:0.82rem; padding-left:8px; }
-.lvl-cell.active { color:#e7e7ea; }
-.lvl-cell.inactive { color:#4a4a5a; }
-.lvl-green { border-left:3px solid #22c55e; }
-.lvl-amber { border-left:3px solid #f59e0b; }
-.lvl-red   { border-left:3px solid #ef4444; }
-</style>
-
 <div class="page-header">
     <div>
         <h2>{{ model['name'] }}</h2>
@@ -48,12 +36,10 @@
             </div>
         </div>
 
+        {% if has_role('Admin', 'Developer') %}
         <div class="card mt-4">
             <div class="card-header">Parameter Scores</div>
             <div class="card-body p-0">
-
-                {% if has_role('Admin', 'Developer') %}
-                {# ── Editable form for Admin / Developer ── #}
                 <form method="POST" action="{{ url_for('main.model_save_scores', model_id=model['id']) }}">
                     {% for group_name, group_params in groups.items() %}
                     <div class="param-group-header">{{ group_name }}</div>
@@ -64,7 +50,8 @@
                                 <th>Criteria</th>
                                 <th>Weight</th>
                                 <th>Level</th>
-                                </tr>
+                                <th>Weighted Score</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {% for param in group_params %}
@@ -75,11 +62,12 @@
                                 <td>{{ param['weight'] }}</td>
                                 <td>
                                     <select name="level_{{ param['id'] }}" class="form-control form-control-sm">
-                                        <option value="1" {% if score and score['level'] == 1 %}selected{% endif %}>1 &mdash; {{ param['level1_label'] or 'Low' }}</option>
-                                        <option value="2" {% if score and score['level'] == 2 %}selected{% endif %}>2 &mdash; {{ param['level2_label'] or 'Medium' }}</option>
-                                        <option value="3" {% if score and score['level'] == 3 %}selected{% endif %}>3 &mdash; {{ param['level3_label'] or 'High' }}</option>
+                                        <option value="1" {% if score and score['level'] == 1 %}selected{% endif %}>Low (1)</option>
+                                        <option value="2" {% if score and score['level'] == 2 %}selected{% endif %}>Medium (2)</option>
+                                        <option value="3" {% if score and score['level'] == 3 %}selected{% endif %}>High (3)</option>
                                     </select>
                                 </td>
+                                <td>{{ '%.2f'|format(score['weighted_score'] if score else 0) }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -93,51 +81,9 @@
                     <p class="text-muted p-3">No parameters defined yet. <a href="{{ url_for('main.parameters_list') }}">Add parameters</a>.</p>
                     {% endif %}
                 </form>
-
-                {% else %}
-                {# ── Read-only view for User role ── #}
-                {% for group_name, group_params in groups.items() %}
-                <div class="param-group-header">{{ group_name }}</div>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Sub-Parameter</th>
-                            <th>Description</th>
-                            <th>Weight</th>
-                            <th>Level</th>
-                            <th style="color:#22c55e">&#9632; Low (1)</th>
-                            <th style="color:#f59e0b">&#9632; Medium (2)</th>
-                            <th style="color:#ef4444">&#9632; High (3)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for param in group_params %}
-                        {% set score = scores_map.get(param['id']) %}
-                        {% set level = score['level'] if score else 1 %}
-                        <tr>
-                            <td style="font-weight:600">{{ param['sub_parameter'] or '-' }}</td>
-                            <td class="text-muted" style="font-size:0.83rem">{{ param['description'] or '-' }}</td>
-                            <td style="text-align:center">{{ param['weight'] }}</td>
-                            <td style="text-align:center">
-                                {% if level == 1 %}<span class="level-badge-1">1</span>
-                                {% elif level == 2 %}<span class="level-badge-2">2</span>
-                                {% else %}<span class="level-badge-3">3</span>{% endif %}
-                            </td>
-                            <td class="lvl-cell lvl-green {% if level == 1 %}active{% else %}inactive{% endif %}">{{ param['level1_label'] or 'Low' }}</td>
-                            <td class="lvl-cell lvl-amber {% if level == 2 %}active{% else %}inactive{% endif %}">{{ param['level2_label'] or 'Medium' }}</td>
-                            <td class="lvl-cell lvl-red {% if level == 3 %}active{% else %}inactive{% endif %}">{{ param['level3_label'] or 'High' }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                {% endfor %}
-                {% if not parameters %}
-                <p class="text-muted p-3">No parameters defined yet.</p>
-                {% endif %}
-                {% endif %}
-
             </div>
         </div>
+        {% endif %}
     </div>
 
     <div class="detail-side">
@@ -175,8 +121,11 @@
                             <span class="tier-badge sm">{{ ov['old_tier'] or 'None' }}</span>
                             <span class="arrow">&#8594;</span>
                             <span class="tier-badge sm current">{{ ov['new_tier'] }}</span>
+                            {% if ov['created_at'] %}
+                            <span class="override-date">&#128197; {{ ov['created_at'][:10] }} &nbsp; &#128336; {{ ov['created_at'][11:16] }}</span>
+                            {% endif %}
                         </div>
-                        <div class="override-meta">{{ ov['user_email'] }} &mdash; {{ ov['created_at'][:16] if ov['created_at'] else '-' }}</div>
+                        <div class="override-meta">{{ ov['user_email'] }}</div>
                         <div class="override-reason">{{ ov['reason'] }}</div>
                     </li>
                     {% endfor %}
