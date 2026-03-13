@@ -1,4 +1,3 @@
-
 import json
 import csv
 import io
@@ -402,10 +401,28 @@ def report_tiering():
     risk_types = [r[0] for r in db.execute(
         'SELECT DISTINCT risk_type FROM models WHERE risk_type IS NOT NULL'
     ).fetchall()]
-    tiers = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
+    tiers      = db.execute('SELECT * FROM tiers ORDER BY sort_order').fetchall()
+    parameters = db.execute(
+        f'SELECT * FROM parameters ORDER BY {GRP_ORDER}, id'
+    ).fetchall()
+
+    # Build scores lookup: {model_id: {parameter_id: level}}
+    all_scores = db.execute('SELECT model_id, parameter_id, level FROM model_scores').fetchall()
+    scores_lookup = {}
+    for s in all_scores:
+        scores_lookup.setdefault(s['model_id'], {})[s['parameter_id']] = s['level']
+
+    # Group parameters
+    param_groups = {}
+    for p in parameters:
+        param_groups.setdefault(p['grp'], []).append(p)
+
+    LEVEL_LABELS = {1: 'Low', 2: 'Medium', 3: 'High'}
 
     return render_template('reporttiering.html',
                            models=models, risk_types=risk_types, tiers=tiers,
+                           parameters=parameters, param_groups=param_groups,
+                           scores_lookup=scores_lookup, level_labels=LEVEL_LABELS,
                            risk_filter=risk_filter, tier_filter=tier_filter,
                            has_role=has_role)
 
@@ -451,6 +468,246 @@ def report_export_csv():
 
     return Response(output.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': 'attachment; filename=tiering_report.csv'})
+
+
+@main_bp.route('/reports/export/excel')
+@login_required
+def report_export_excel():
+    from openpyxl import Workbook
+    from openpyxl.styles import (Font, PatternFill, Alignment, Border, Side,
+                                 GradientFill)
+    from openpyxl.utils import get_column_letter
+    import io
+
+    db          = get_db()
+    risk_filter = request.args.get('risk_type', '')
+    tier_filter = request.args.get('tier', '')
+
+    query  = 'SELECT * FROM models WHERE 1=1'
+    qparams = []
+    if risk_filter:
+        query += ' AND risk_type=?'
+        qparams.append(risk_filter)
+    if tier_filter:
+        query += ' AND current_tier=?'
+        qparams.append(tier_filter)
+
+    models     = db.execute(query, qparams).fetchall()
+    parameters = db.execute(
+        f'SELECT * FROM parameters ORDER BY {GRP_ORDER}, id'
+    ).fetchall()
+    all_scores = db.execute('SELECT model_id, parameter_id, level FROM model_scores').fetchall()
+    scores_lookup = {}
+    for s in all_scores:
+        scores_lookup.setdefault(s['model_id'], {})[s['parameter_id']] = s['level']
+
+    GROUP_COLORS = {
+        'Materiality': {'header': '1F4E79', 'subheader': '2E75B6', 'data': 'DEEAF1'},
+        'Criticality': {'header': '375623', 'subheader': '548235', 'data': 'E2EFDA'},
+        'Complexity':  {'header': '7B3F00', 'subheader': 'C55A11', 'data': 'FCE4D6'},
+    }
+    DEFAULT_COLORS = {'header': '404040', 'subheader': '595959', 'data': 'F2F2F2'}
+    LEVEL_LABELS   = {1: 'Low', 2: 'Medium', 3: 'High'}
+    thin = Side(style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    wb = Workbook()
+
+    # ── Sheet 1: Summary ─────────────────────────────────────────────────────
+    ws = wb.active
+    ws.title = 'Tiering Report'
+
+    # Group parameters
+    param_groups = {}
+    for p in parameters:
+        param_groups.setdefault(p['grp'], []).append(p)
+    group_order = [g for g in ['Materiality', 'Criticality', 'Complexity']
+                   if g in param_groups]
+    for g in param_groups:
+        if g not in group_order:
+            group_order.append(g)
+
+    # ── Row 1: Title ─────────────────────────────────────────────────────────
+    total_param_cols = len(parameters)
+    total_cols = 5 + total_param_cols  # fixed cols + param cols
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
+    title_cell = ws.cell(row=1, column=1,
+                         value='Model Tiering Report' +
+                               (f' — Risk: {risk_filter}' if risk_filter else '') +
+                               (f' — Tier: {tier_filter}' if tier_filter else ''))
+    title_cell.font      = Font(name='Calibri', bold=True, size=14, color='FFFFFF')
+    title_cell.fill      = PatternFill('solid', fgColor='1F3864')
+    title_cell.alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 28
+
+    # ── Row 2: Group headers ──────────────────────────────────────────────────
+    FIXED_HEADERS = ['Model Name', 'Risk Type', 'Computed Score',
+                     'Computed Tier', 'Current Tier']
+    col = 1
+    for h in FIXED_HEADERS:
+        c = ws.cell(row=2, column=col, value=h)
+        c.font      = Font(name='Calibri', bold=True, color='FFFFFF', size=10)
+        c.fill      = PatternFill('solid', fgColor='2F5496')
+        c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        c.border    = border
+        col += 1
+
+    for grp in group_order:
+        grp_params = param_groups[grp]
+        colors = GROUP_COLORS.get(grp, DEFAULT_COLORS)
+        start_col = col
+        end_col   = col + len(grp_params) - 1
+        if start_col == end_col:
+            ws.cell(row=2, column=start_col, value=grp)
+        else:
+            ws.merge_cells(start_row=2, start_column=start_col,
+                           end_row=2, end_column=end_col)
+            ws.cell(row=2, column=start_col, value=grp)
+        hc = ws.cell(row=2, column=start_col)
+        hc.font      = Font(name='Calibri', bold=True, color='FFFFFF', size=10)
+        hc.fill      = PatternFill('solid', fgColor=colors['header'])
+        hc.alignment = Alignment(horizontal='center', vertical='center')
+        hc.border    = border
+        col += len(grp_params)
+    ws.row_dimensions[2].height = 22
+
+    # ── Row 3: Sub-parameter headers ─────────────────────────────────────────
+    for c_idx in range(1, 6):
+        c = ws.cell(row=3, column=c_idx, value='')
+        c.fill   = PatternFill('solid', fgColor='BDD7EE')
+        c.border = border
+
+    col = 6
+    for grp in group_order:
+        colors = GROUP_COLORS.get(grp, DEFAULT_COLORS)
+        for p in param_groups[grp]:
+            c = ws.cell(row=3, column=col,
+                        value=p['sub_parameter'] or p['criteria'] or '')
+            c.font      = Font(name='Calibri', bold=True, size=9, color='FFFFFF')
+            c.fill      = PatternFill('solid', fgColor=colors['subheader'])
+            c.alignment = Alignment(horizontal='center', vertical='center',
+                                    wrap_text=True)
+            c.border    = border
+            col += 1
+    ws.row_dimensions[3].height = 40
+
+    # ── Row 4: Weight row ─────────────────────────────────────────────────────
+    ws.cell(row=4, column=1, value='Weight')
+    for c_idx in range(1, 6):
+        c = ws.cell(row=4, column=c_idx)
+        c.font      = Font(name='Calibri', italic=True, size=9, color='595959')
+        c.fill      = PatternFill('solid', fgColor='F2F2F2')
+        c.alignment = Alignment(horizontal='center')
+        c.border    = border
+
+    col = 6
+    for grp in group_order:
+        colors = GROUP_COLORS.get(grp, DEFAULT_COLORS)
+        for p in param_groups[grp]:
+            c = ws.cell(row=4, column=col,
+                        value=f'{p["weight"]:.0%}' if p['weight'] else '')
+            c.font      = Font(name='Calibri', italic=True, size=9)
+            c.fill      = PatternFill('solid', fgColor=colors['data'])
+            c.alignment = Alignment(horizontal='center')
+            c.border    = border
+            col += 1
+    ws.row_dimensions[4].height = 16
+
+    # ── Data rows ─────────────────────────────────────────────────────────────
+    # Build ordered param list matching columns
+    ordered_params = []
+    for grp in group_order:
+        ordered_params.extend(param_groups[grp])
+
+    ALT_FILL = PatternFill('solid', fgColor='F7FBFF')
+    BASE_FILL = PatternFill('solid', fgColor='FFFFFF')
+
+    for row_idx, m in enumerate(models, start=5):
+        fill = ALT_FILL if row_idx % 2 == 0 else BASE_FILL
+        model_scores = scores_lookup.get(m['id'], {})
+
+        fixed_vals = [
+            m['name'],
+            m['risk_type'] or '',
+            round(m['computed_score'] or 0, 2),
+            m['computed_tier'] or '',
+            m['current_tier'] or '',
+        ]
+        for c_idx, val in enumerate(fixed_vals, start=1):
+            c = ws.cell(row=row_idx, column=c_idx, value=val)
+            c.font      = Font(name='Calibri', size=10)
+            c.fill      = fill
+            c.alignment = Alignment(vertical='center',
+                                    horizontal='center' if c_idx > 2 else 'left')
+            c.border    = border
+
+        col = 6
+        for grp in group_order:
+            colors = GROUP_COLORS.get(grp, DEFAULT_COLORS)
+            for p in param_groups[grp]:
+                level = model_scores.get(p['id'])
+                label = LEVEL_LABELS.get(level, '') if level else ''
+                c = ws.cell(row=row_idx, column=col, value=label)
+                c.font      = Font(name='Calibri', size=10)
+                c.fill      = PatternFill('solid', fgColor=colors['data'])
+                c.alignment = Alignment(horizontal='center', vertical='center')
+                c.border    = border
+                col += 1
+
+    # ── Column widths ─────────────────────────────────────────────────────────
+    ws.column_dimensions['A'].width = 28  # Model Name
+    ws.column_dimensions['B'].width = 16  # Risk Type
+    ws.column_dimensions['C'].width = 14  # Score
+    ws.column_dimensions['D'].width = 14  # Computed Tier
+    ws.column_dimensions['E'].width = 14  # Current Tier
+    for i, _ in enumerate(ordered_params, start=6):
+        ws.column_dimensions[get_column_letter(i)].width = 14
+
+    ws.freeze_panes = 'A5'
+
+    # ── Sheet 2: Parameters Reference ────────────────────────────────────────
+    ws2 = wb.create_sheet('Parameters')
+    param_headers = ['Group', 'Sub-Parameter', 'Description',
+                     'Weight', 'Low (1)', 'Medium (2)', 'High (3)']
+    for c_idx, h in enumerate(param_headers, 1):
+        c = ws2.cell(row=1, column=c_idx, value=h)
+        c.font      = Font(name='Calibri', bold=True, color='FFFFFF', size=10)
+        c.fill      = PatternFill('solid', fgColor='2F5496')
+        c.alignment = Alignment(horizontal='center', vertical='center')
+        c.border    = border
+    ws2.row_dimensions[1].height = 20
+
+    for row_idx, p in enumerate(parameters, start=2):
+        colors = GROUP_COLORS.get(p['grp'], DEFAULT_COLORS)
+        fill = PatternFill('solid', fgColor=colors['data'])
+        row_vals = [
+            p['grp'], p['sub_parameter'] or '', p['description'] or '',
+            f'{p["weight"]:.0%}' if p['weight'] else '',
+            p['level1_label'] or 'Low',
+            p['level2_label'] or 'Medium',
+            p['level3_label'] or 'High',
+        ]
+        for c_idx, val in enumerate(row_vals, 1):
+            c = ws2.cell(row=row_idx, column=c_idx, value=val)
+            c.font      = Font(name='Calibri', size=10)
+            c.fill      = fill
+            c.alignment = Alignment(vertical='center',
+                                    horizontal='center' if c_idx > 2 else 'left')
+            c.border    = border
+
+    for col_letter, width in zip('ABCDEFG', [18, 28, 36, 10, 20, 20, 20]):
+        ws2.column_dimensions[col_letter].width = width
+    ws2.freeze_panes = 'A2'
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = 'tiering_report.xlsx'
+    return Response(
+        output.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
