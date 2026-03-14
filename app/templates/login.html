@@ -26,17 +26,21 @@
         <form method="POST" action="{{ url_for('auth.login') }}">
             <div class="form-group">
                 <label for="email">Email Address</label>
-                <input type="email" id="email" name="email" class="form-control" placeholder="you@example.com" required autofocus>
+                <input type="email" id="email" name="email" class="form-control"
+                       placeholder="you@example.com" required autofocus>
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required>
+                <input type="password" id="password" name="password" class="form-control"
+                       placeholder="••••••••" required>
             </div>
             <button type="submit" class="btn btn-primary btn-block">Sign In</button>
         </form>
 
         <div class="auth-footer">
-            <p>Don't have an account? <a href="{{ url_for('auth.register') }}">Register</a></p>
+            <p style="font-size:0.82rem;color:var(--text-muted,#8898aa);">
+                &#128274; Access is by invitation only. Contact your administrator to request an account.
+            </p>
         </div>
     </div>
 </div>
