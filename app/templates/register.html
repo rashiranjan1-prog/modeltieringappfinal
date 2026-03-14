@@ -30,15 +30,13 @@
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required>
+                <input type="password" id="password" name="password" class="form-control" placeholder="••••••••" required minlength="6">
             </div>
-            <div class="form-group">
-                <label for="role">Role</label>
-                <select id="role" name="role" class="form-control">
-                    <option value="User">User</option>
-                    <option value="Developer">Developer</option>
-                    <option value="Admin">Admin</option>
-                </select>
+            <div class="form-group" style="background:var(--bg-card,#1e2535);border:1px solid var(--border,#2a3550);border-radius:6px;padding:0.65rem 0.85rem;margin-bottom:0.5rem;">
+                <p style="margin:0;font-size:0.82rem;color:var(--text-muted,#8898aa);">
+                    &#128274; New accounts are created with the <strong style="color:var(--text,#e2e8f0);">User</strong> role.
+                    An Admin can upgrade your role after registration.
+                </p>
             </div>
             <button type="submit" class="btn btn-primary btn-block">Register</button>
         </form>
