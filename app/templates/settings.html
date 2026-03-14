@@ -8,6 +8,7 @@
 
 <div class="settings-grid">
 
+    <!-- Group Weights -->
     <div class="card">
         <div class="card-header">Group Weights</div>
         <div class="card-body">
@@ -31,6 +32,7 @@
         </div>
     </div>
 
+    <!-- Tier Ranges -->
     <div class="card">
         <div class="card-header">Tier Ranges</div>
         <div class="card-body p-0">
@@ -39,9 +41,9 @@
                 <input type="hidden" name="action" value="tier">
                 <input type="hidden" name="tier_id" value="{{ t['id'] }}">
                 <div class="tier-row">
-                    <input type="text" name="tier_name" value="{{ t['name'] }}" class="form-control" placeholder="Tier name">
-                    <input type="number" name="lower_bound" value="{{ t['lower_bound'] }}" class="form-control" step="any" placeholder="Min">
-                    <input type="number" name="upper_bound" value="{{ t['upper_bound'] }}" class="form-control" step="any" placeholder="Max">
+                    <input type="text"   name="tier_name"    value="{{ t['name'] }}"         class="form-control" placeholder="Tier name">
+                    <input type="number" name="lower_bound"  value="{{ t['lower_bound'] }}"  class="form-control" step="any" placeholder="Min">
+                    <input type="number" name="upper_bound"  value="{{ t['upper_bound'] }}"  class="form-control" step="any" placeholder="Max">
                     <button type="submit" class="btn btn-sm btn-outline">Save</button>
                     <button type="submit" form="del-{{ t['id'] }}" class="btn btn-sm btn-danger">Del</button>
                 </div>
@@ -51,12 +53,11 @@
                 <input type="hidden" name="tier_id" value="{{ t['id'] }}">
             </form>
             {% endfor %}
-
             <div class="p-3">
                 <form method="POST" action="{{ url_for('main.settings') }}">
                     <input type="hidden" name="action" value="add_tier">
                     <div class="tier-row">
-                        <input type="text" name="tier_name" class="form-control" placeholder="New tier name">
+                        <input type="text"   name="tier_name"   class="form-control" placeholder="New tier name">
                         <input type="number" name="lower_bound" class="form-control" step="any" placeholder="Min">
                         <input type="number" name="upper_bound" class="form-control" step="any" placeholder="Max">
                         <button type="submit" class="btn btn-sm btn-primary">Add</button>
@@ -66,36 +67,102 @@
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-header">Users</div>
+    <!-- User Management -->
+    <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+            <span>User Management</span>
+            <button class="btn btn-sm btn-primary" onclick="document.getElementById('create-user-form').style.display = document.getElementById('create-user-form').style.display === 'none' ? 'block' : 'none'">+ Create User</button>
+        </div>
+
+        <!-- Create user form (hidden by default) -->
+        <div id="create-user-form" style="display:none;padding:1rem 1.25rem;border-bottom:1px solid var(--border);">
+            <form method="POST" action="{{ url_for('auth.admin_create_user') }}" style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;">
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:180px;">
+                    <label style="font-size:0.78rem;">Email</label>
+                    <input type="email" name="email" class="form-control" placeholder="user@example.com" required>
+                </div>
+                <div class="form-group" style="margin-bottom:0;flex:1;min-width:140px;">
+                    <label style="font-size:0.78rem;">Password (min 6 chars)</label>
+                    <input type="password" name="password" class="form-control" placeholder="••••••••" required minlength="6">
+                </div>
+                <div class="form-group" style="margin-bottom:0;min-width:120px;">
+                    <label style="font-size:0.78rem;">Role</label>
+                    <select name="role" class="form-control">
+                        <option value="User">User</option>
+                        <option value="Developer">Developer</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm" style="height:38px;">Create</button>
+            </form>
+        </div>
+
+        <!-- User table -->
         <div class="card-body p-0">
             <table class="table">
                 <thead>
-                    <tr><th>Email</th><th>Role</th><th>Created</th></tr>
+                    <tr>
+                        <th>Email</th>
+                        <th>Current Role</th>
+                        <th>Registered</th>
+                        <th>Change Role</th>
+                        <th></th>
+                    </tr>
                 </thead>
                 <tbody>
                     {% for u in users %}
                     <tr>
-                        <td>{{ u['email'] }}</td>
-                        <td><span class="user-badge {{ u['role'] | lower }}">{{ u['role'] }}</span></td>
+                        <td>
+                            {{ u['email'] }}
+                            {% if u['id'] == current_user.id %}
+                            <span style="font-size:0.72rem;color:var(--text-muted);margin-left:6px;">(you)</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="user-badge {{ u['role'] | lower }}">{{ u['role'] }}</span>
+                        </td>
                         <td>{{ u['created_at'][:10] if u['created_at'] else '-' }}</td>
+                        <td>
+                            {% if u['id'] != current_user.id %}
+                            <form method="POST" action="{{ url_for('auth.admin_change_role', user_id=u['id']) }}"
+                                  style="display:flex;gap:0.4rem;align-items:center;">
+                                <select name="role" class="form-control form-control-sm" style="width:auto;">
+                                    <option value="User"      {% if u['role'] == 'User'      %}selected{% endif %}>User</option>
+                                    <option value="Developer" {% if u['role'] == 'Developer' %}selected{% endif %}>Developer</option>
+                                    <option value="Admin"     {% if u['role'] == 'Admin'     %}selected{% endif %}>Admin</option>
+                                </select>
+                                <button type="submit" class="btn btn-sm btn-outline">Update</button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted" style="font-size:0.8rem;">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if u['id'] != current_user.id %}
+                            <form method="POST"
+                                  action="{{ url_for('auth.admin_delete_user', user_id=u['id']) }}"
+                                  onsubmit="return confirm('Delete user ' + this.dataset.email + '? This cannot be undone.');"
+                                  data-email="{{ u['email'] | e }}">
+                                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                            </form>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
-            <div class="p-3">
-                <a href="{{ url_for('auth.register') }}" class="btn btn-outline btn-sm">+ Create User</a>
-            </div>
         </div>
     </div>
 
-    <div class="card" style="border: 1px solid #c0392b;">
-        <div class="card-header" style="background:#2a1a1a; color:#e74c3c;">⚠ Danger Zone</div>
+    <!-- Danger Zone -->
+    <div class="card" style="border:1px solid #c0392b;">
+        <div class="card-header" style="background:#2a1a1a;color:#e74c3c;">&#9888; Danger Zone</div>
         <div class="card-body">
             <p class="text-muted" style="margin-bottom:1rem;">Reset all models, parameters and scores so IDs restart from 1. You will need to re-upload your Excel after this.</p>
-            <form method="POST" action="{{ url_for('main.settings') }}" onsubmit="return confirm('This will delete ALL models and scores. Are you sure?');">
+            <form method="POST" action="{{ url_for('main.settings') }}"
+                  onsubmit="return confirm('This will delete ALL models and scores. Are you sure?');">
                 <input type="hidden" name="action" value="reset_ids">
-                <button type="submit" class="btn btn-danger">🔄 Reset Database &amp; Restart IDs from 1</button>
+                <button type="submit" class="btn btn-danger">&#128260; Reset Database &amp; Restart IDs from 1</button>
             </form>
         </div>
     </div>
